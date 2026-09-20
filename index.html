@@ -4,6 +4,27 @@
 
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<script>
+// Neither 100% nor 100dvh survives Safari's own toolbar hiding/showing reliably on every
+// device — dvh is supposed to track it live but doesn't always repaint in time, which is
+// what left a blank (black) gap below the tab bar. Measuring the real visible height in JS
+// and writing it as a custom property is the classic, reliable fix: it reacts to the same
+// events Safari's chrome animation fires, so the app frame is always sized to what's
+// actually on screen right now.
+(function(){
+  function setVVH(){
+    var h = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
+    document.documentElement.style.setProperty("--vvh", (h * 0.01) + "px");
+  }
+  setVVH();
+  window.addEventListener("resize", setVVH);
+  window.addEventListener("orientationchange", setVVH);
+  if(window.visualViewport){
+    window.visualViewport.addEventListener("resize", setVVH);
+    window.visualViewport.addEventListener("scroll", setVVH);
+  }
+})();
+</script>
 <meta name="theme-color" content="#0d0f10">
 <meta name="color-scheme" content="dark">
 <meta name="mobile-web-app-capable" content="yes">
@@ -60,11 +81,10 @@ html{
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
 }
-/* 100% alone doesn't react when Safari's own address bar shows/hides — the box stays sized
-   to whichever viewport was in effect on load, leaving a gap of bare (black) html/body
-   background once the chrome collapses and the real visible area grows. 100dvh tracks the
-   actual visible viewport live, so it's kept as the authoritative value here. */
-html,body{height:100%; height:100dvh; overflow:hidden; overscroll-behavior:none;}
+/* --vvh is set by the inline script in <head> from the real, live visible height (see the
+   comment there) — calc() with it is the authoritative value; the 100%/100dvh chain before
+   it is only there so the page isn't unstyled for the one frame before that script runs. */
+html,body{height:100%; height:100dvh; height:calc(var(--vvh, 1vh) * 100); overflow:hidden; overscroll-behavior:none;}
 body{
   margin:0; color:var(--ink);
   background:
