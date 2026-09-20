@@ -50,7 +50,16 @@ button:active, .theme-swatch:active, .icon-btn:active{ transform:scale(.93); }
   button:active, .theme-swatch:active, .icon-btn:active, .workout-tile:active, .check:active{ transform:none; }
   .enter-anim{ animation:none; }
 }
-html{color-scheme:dark; padding-top:env(safe-area-inset-top,0px);}
+/* html itself has to paint the safe-area strips (notch + home-indicator bar): in this
+   standalone build there's no platform skeleton doing that for us like on the claude.ai
+   artifact preview, so without an explicit background here those strips fall back to the
+   browser's own default (flat black in dark mode) instead of the app's dark gradient —
+   that's the black band that showed up above the home indicator once installed. */
+html{
+  color-scheme:dark; background:var(--bg);
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
 html,body{height:100%; overflow:hidden; overscroll-behavior:none;}
 body{
   margin:0; color:var(--ink);
@@ -108,7 +117,7 @@ nav#tabs{
   background:var(--glass-bg-strong); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
   border:1px solid var(--glass-border); border-radius:26px;
   box-shadow:var(--shadow), inset 0 1px 0 var(--glass-hi);
-  padding:6px; margin:0 0 calc(8px + env(safe-area-inset-bottom,0px));
+  padding:6px; margin:0 0 8px;
 }
 nav#tabs button{
   flex:1; background:none; border:none; display:flex; flex-direction:column; align-items:center; gap:4px;
