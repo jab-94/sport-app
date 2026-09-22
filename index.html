@@ -594,7 +594,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b50";
+  var BUILD_VERSION = "b51";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -1738,11 +1738,18 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // ---------- PROGRESS ----------
   function renderProgress(){
     var sessions = state.sessions;
-    var totalSessions = sessions.length;
-    var now = new Date();
-    var thisMonth = sessions.filter(function(s){ var d=new Date(s.date); return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear(); }).length;
-    var streak = computeWeekStreak(sessions);
     var pid = state.currentPerson || "p1";
+    // Régularité is about THIS person's own attendance, not the couple's combined total —
+    // a session counts for someone only if they were actually a participant in it (same
+    // list finishSession() used to compute their calories/volume, so "did the session" and
+    // "has stats for it" always agree).
+    var personSessions = sessions.filter(function(s){
+      return (s.participants || state.people.map(function(p){return p.id;})).indexOf(pid) !== -1;
+    });
+    var totalSessions = personSessions.length;
+    var now = new Date();
+    var thisMonth = personSessions.filter(function(s){ var d=new Date(s.date); return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear(); }).length;
+    var streak = computeWeekStreak(personSessions);
 
     var totalVolume = sessions.reduce(function(a,s){return a+(s.volumeByPerson?s.volumeByPerson[pid]||0:0);},0);
     var totalCal = sessions.reduce(function(a,s){return a+(s.caloriesByPerson?s.caloriesByPerson[pid]||0:0);},0);
@@ -1752,11 +1759,11 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       return '<button class="pill ' + (pl.id===pid?"active":"") + ' ' + (pl.id==="p2"?"p2":"") + '" data-person-select="' + pl.id + '">' + escapeAttr(pl.name) + '</button>';
     }).join("") + '</div>';
 
-    html += '<div class="section-title">Régularité (séances faites ensemble)</div>';
+    html += '<div class="section-title">Régularité — ' + escapeAttr(personName(pid)) + '</div>';
     html += '<div class="stat-grid">' + stat(totalSessions,"Séances au total") + stat(thisMonth,"Séances ce mois-ci") +
       stat(streak,"Semaines d’affilée") + '</div>';
 
-    html += '<div class="chart-wrap">' + weeklyChartSvg(sessions) + '</div>';
+    html += '<div class="chart-wrap">' + weeklyChartSvg(personSessions) + '</div>';
 
     html += '<div class="section-title">' + escapeAttr(personName(pid)) + ' — calories &amp; volume</div>';
     html += '<div class="stat-grid">' + stat(Math.round(totalCal) + " kcal", "Calories cumulées (est.)") + stat(Math.round(totalVolume) + " kg", "Volume total soulevé") + '</div>';
