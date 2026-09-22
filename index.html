@@ -190,7 +190,13 @@ body{
     var(--bg);
   font-family:"IBM Plex Sans",system-ui,sans-serif;
   padding-top:env(safe-area-inset-top,0px);
-  padding-bottom:env(safe-area-inset-bottom,0px);
+  /* No padding-bottom here (unlike padding-top above): reserving it as body padding was
+     what left a flat, un-blurred dead strip at the very bottom — #view's scrolled content
+     never reached into it, unlike iOS's own Réglages, where content visibly continues,
+     blurred, all the way to the physical edge behind the home indicator. #app now extends
+     the full height instead; nav#tabs/#session-bar each add the safe-area inset to their
+     own "bottom" offset below instead, so the pill itself still clears the home indicator
+     without capping how far #view's content can reach. */
   padding-left:16px; padding-right:16px;
   display:flex; flex-direction:column;
   -webkit-text-size-adjust:100%;
@@ -263,11 +269,11 @@ a{color:var(--accent);}
   overflow-y:auto; -webkit-overflow-scrolling:touch;
   overscroll-behavior:contain;
   padding-top:var(--topbar-h, 64px);
-  padding-bottom:calc(var(--navbar-h, 84px) + var(--sessionbar-h, 0px) + 18px);
+  padding-bottom:calc(env(safe-area-inset-bottom, 0px) + var(--navbar-h, 84px) + var(--sessionbar-h, 0px) + 18px);
 }
 
 nav#tabs{
-  position:absolute; left:0; right:0; bottom:8px; z-index:2; overflow:hidden;
+  position:absolute; left:0; right:0; bottom:calc(8px + env(safe-area-inset-bottom, 0px)); z-index:2; overflow:hidden;
   /* WebKit doesn't always clip backdrop-filter's blur to border-radius on its own — without
      overflow:hidden here, whatever sits directly behind the bar can bleed through as a
      hard rectangular edge exactly at the rounded corners (confirmed on-device: a stat-tile's
@@ -437,7 +443,7 @@ nav#tabs button.active svg{stroke:var(--accent);}
 .unit{font-size:10px; color:var(--ink-faint); flex-shrink:0; width:26px;}
 
 #session-bar{
-  position:absolute; left:0; right:0; bottom:calc(8px + var(--navbar-h, 84px) + 10px); z-index:2;
+  position:absolute; left:0; right:0; bottom:calc(8px + env(safe-area-inset-bottom, 0px) + var(--navbar-h, 84px) + 10px); z-index:2;
   padding:12px 16px; overflow:hidden;
   /* Its own height (rest-row present or not) feeds --sessionbar-h via syncBarHeights(), which
      is what #view's padding-bottom reserves room for — see the comment on #app. */
@@ -588,7 +594,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b49";
+  var BUILD_VERSION = "b50";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
