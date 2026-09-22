@@ -563,7 +563,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b45";
+  var BUILD_VERSION = "b46";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -1252,6 +1252,36 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // itself (state.restDurationDefault) DOES live in `state` — it's a shared preference,
   // set in Réglages, not per-session throwaway UI like the countdown deadline is.
   var restEndsAt = null, restBuzzed = false;
+  // navigator.vibrate does not exist on iOS Safari/WKWebView — Apple has never implemented
+  // the Vibration API there, for any website or PWA, so the vibrate() calls below are a
+  // no-op on iPhone (harmless on Android, where it does work). A short beep is the one
+  // alert that actually works everywhere. iOS only allows sound to start from inside a
+  // user-gesture handler, so the AudioContext is created/resumed on the "Repos" tap itself
+  // (a real tap) rather than later inside the timer callback, which wouldn't count as one.
+  var restAudioCtx = null;
+  function unlockRestAudio(){
+    try{
+      if(!restAudioCtx) restAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if(restAudioCtx.state === "suspended") restAudioCtx.resume();
+    }catch(e){}
+  }
+  function playRestBeep(){
+    if(!restAudioCtx) return;
+    try{
+      [0, 160].forEach(function(delayMs, i){
+        var t = restAudioCtx.currentTime + delayMs/1000;
+        var osc = restAudioCtx.createOscillator(), gain = restAudioCtx.createGain();
+        osc.frequency.value = i===0 ? 880 : 1040;
+        osc.connect(gain); gain.connect(restAudioCtx.destination);
+        // Quick fade in/out rather than a hard on/off — avoids the sharp "click" pop a
+        // suddenly-started/stopped tone otherwise makes.
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(.2, t + .015);
+        gain.gain.linearRampToValueAtTime(0, t + .13);
+        osc.start(t); osc.stop(t + .14);
+      });
+    }catch(e){}
+  }
   function renderSession(){
     clearInterval(sessionTimerHandle);
     var sess = state.activeSession;
@@ -1457,6 +1487,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     document.getElementById("sb-finish").addEventListener("click", finishSession);
     if(!isVideo){
       document.getElementById("rest-start").addEventListener("click", function(){
+        unlockRestAudio();
         restEndsAt = Date.now() + state.restDurationDefault*1000; restBuzzed = false; updateSessionBar();
       });
       document.getElementById("rest-plus15").addEventListener("click", function(){
@@ -1490,6 +1521,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
           timeSpan.textContent = "0:00"; timeSpan.classList.add("done");
           if(!restBuzzed){
             restBuzzed = true;
+            playRestBeep();
             if(navigator.vibrate) try{ navigator.vibrate([200,100,200,100,200]); }catch(e){}
             setTimeout(function(){ restEndsAt = null; updateSessionBar(); }, 2000);
           }
