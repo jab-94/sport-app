@@ -519,11 +519,11 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
 (function(){
   "use strict";
   var STORAGE_KEY = "carnet-fonte-v2";
-  var CONTENT_VERSION = 8; // bump this whenever the built-in exercise data below changes
+  var CONTENT_VERSION = 9; // bump this whenever the built-in exercise data below changes
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b37";
+  var BUILD_VERSION = "b38";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -660,6 +660,12 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
             "En position de planche haute, mains sous les épaules. Ramène un genou vers l'avant en gardant le dos plat et le bassin stable, puis alterne rapidement d'un côté à l'autre.",
             "abdo-walkout.mp4"),
         ]},
+        // A "video" workout has no exercise list — startSession()/renderSession() special-case
+        // type==="video" to show a single player instead of exercise cards, and finishSession()
+        // already handles an empty progress[] fine on its own (0 volume, no PRs, just duration
+        // × met × weight for calories, same formula as every other workout).
+        { id:"cours-abdo", name:"Cours focus abdo", met:4.0, location:"maison", type:"video",
+          videoFile:"cours-focus-abdo.mp4", videoDurationMin:10, exercises:[] },
       ]
     };
   }
@@ -814,11 +820,12 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     document.documentElement.style.setProperty("--accent-ink", t.ink);
   }
 
-  var WORKOUT_COLORS = { haut:"#ff5a33", bas:"#f2b134", abdo:"#3ecf8e" };
+  var WORKOUT_COLORS = { haut:"#ff5a33", bas:"#f2b134", abdo:"#3ecf8e", "cours-abdo":"#a855f7" };
   var WORKOUT_ICONS = {
     haut: '<path d="M3 12h2M19 12h2M6 9v6M18 9v6M8 8v8M16 8v8M8 12h8"/>',
     bas: '<path d="M9 3v7l-3 11h4l2-8 2 8h4l-3-11V3"/>',
-    abdo: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>'
+    abdo: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
+    "cours-abdo": '<circle cx="12" cy="12" r="9"/><path d="M10.5 8.5l5 3.5-5 3.5v-7z"/>'
   };
   function workoutColor(id){ return WORKOUT_COLORS[id] || "#ff5a33"; }
   function findWorkout(id){ return state.workouts.find(function(w){return w.id===id;}); }
@@ -1050,7 +1057,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
           '<div class="wicon">' + '<svg viewBox="0 0 24 24">' + (WORKOUT_ICONS[w.id]||"") + '</svg></div>' +
           '<div class="tinfo">' +
             '<div class="name disp">' + w.name + '</div>' +
-            '<div class="meta">' + w.exercises.length + ' exercices' + (last ? ' · ' + fmtDate(last.date) : ' · jamais fait') + '</div>' +
+            '<div class="meta">' + (w.type==="video" ? "Cours vidéo · " + w.videoDurationMin + " min" : w.exercises.length + ' exercices') + (last ? ' · ' + fmtDate(last.date) : ' · jamais fait') + '</div>' +
             '<button class="btn btn-accent btn-pill" data-start="' + w.id + '">Commencer</button>' +
           '</div>' +
         '</div>';
@@ -1184,6 +1191,27 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     clearInterval(sessionTimerHandle);
     var sess = state.activeSession;
     var w = findWorkout(sess.workoutId);
+
+    // A video course replaces the whole exercise-cards flow with a single player — there's
+    // nothing to check off set by set, just "watch it, then tap Cours terminé" (finishSession
+    // already computes calories from met × weight × duration regardless of exercises, so it
+    // needs no changes to work here).
+    if(w.type === "video"){
+      $view.innerHTML = '<div class="stack" style="margin-top:6px; padding-bottom:8px;">' +
+        '<div class="row between"><h2 style="margin:0;">' + w.name + '</h2>' +
+        '<button class="btn btn-line btn-sm" id="cancel-session-btn">Annuler</button></div>' +
+        '<div class="card" style="padding:0; overflow:hidden;">' +
+          '<video src="videos/' + escapeAttr(w.videoFile) + '" controls playsinline preload="metadata" ' +
+            'style="width:100%; display:block; background:#000;"></video>' +
+        '</div>' +
+        '<div class="faint" style="text-align:center;">Appuie sur "Cours terminé" en bas une fois la vidéo finie.</div>' +
+      '</div>';
+      document.getElementById("cancel-session-btn").addEventListener("click", cancelSession);
+      renderSessionBar();
+      sessionTimerHandle = setInterval(updateSessionBar, 1000);
+      return;
+    }
+
     var html = '<div class="stack" style="margin-top:6px; padding-bottom:8px;">';
     html += '<div class="row between"><h2 style="margin:0;">' + w.name + '</h2>' +
       '<div class="row" style="gap:8px; flex-shrink:0;"><span class="badge">' + w.exercises.length + ' ex.</span>' +
@@ -1328,8 +1356,17 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     var old = document.getElementById("session-bar"); if(old) old.remove();
     var bar = document.createElement("div");
     bar.id = "session-bar";
-    bar.innerHTML =
-      '<div class="row" style="gap:12px;">' +
+    // A video course has no exercises to count and no "sets" to rest between — just the
+    // elapsed time and a finish action, worded to match what you're actually ending.
+    var w = findWorkout(state.activeSession.workoutId);
+    var isVideo = w && w.type === "video";
+    bar.innerHTML = isVideo ?
+      ('<div class="row between">' +
+        '<span class="time num" id="sb-time"></span>' +
+        '<button class="btn btn-accent btn-sm" id="sb-finish">Cours terminé</button>' +
+      '</div>')
+      :
+      ('<div class="row" style="gap:12px;">' +
         '<span class="prog num" id="sb-count"></span>' +
         '<div class="progress-track"><div class="progress-fill" id="sb-fill"></div></div>' +
         '<span class="time num" id="sb-time"></span>' +
@@ -1345,18 +1382,20 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
           '<button class="btn btn-line btn-sm" id="rest-plus15" type="button">+15s</button>' +
           '<button class="icon-btn" id="rest-cancel" type="button"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
         '</div>' +
-      '</div>';
+      '</div>');
     document.getElementById("app").insertBefore(bar, document.getElementById("tabs"));
     document.getElementById("sb-finish").addEventListener("click", finishSession);
-    document.getElementById("rest-start").addEventListener("click", function(){
-      restEndsAt = Date.now() + state.restDurationDefault*1000; restBuzzed = false; updateSessionBar();
-    });
-    document.getElementById("rest-plus15").addEventListener("click", function(){
-      if(restEndsAt) restEndsAt += 15000; updateSessionBar();
-    });
-    document.getElementById("rest-cancel").addEventListener("click", function(){
-      restEndsAt = null; updateSessionBar();
-    });
+    if(!isVideo){
+      document.getElementById("rest-start").addEventListener("click", function(){
+        restEndsAt = Date.now() + state.restDurationDefault*1000; restBuzzed = false; updateSessionBar();
+      });
+      document.getElementById("rest-plus15").addEventListener("click", function(){
+        if(restEndsAt) restEndsAt += 15000; updateSessionBar();
+      });
+      document.getElementById("rest-cancel").addEventListener("click", function(){
+        restEndsAt = null; updateSessionBar();
+      });
+    }
     updateSessionBar();
   }
   function fmtSec(totalSec){ var s = Math.max(0, Math.round(totalSec)); return Math.floor(s/60) + ":" + String(s%60).padStart(2,"0"); }
@@ -1449,15 +1488,20 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   function showSummary(record, prsByPerson){
     var overlay = document.getElementById("summary-overlay"), sheet = document.getElementById("summary-sheet");
     var participants = record.participants || state.people.map(function(p){return p.id;});
-    var doneTotal=0, total=0;
-    record.exercises.forEach(function(e){ participants.forEach(function(pid){ total++; if(e.entries[pid].done) doneTotal++; }); });
+    // A video course has no per-exercise entries and no weight lifted — "0/0 exercices" and
+    // "0 kg volume" would just be noise, so it skips straight to duration + calories.
+    var isVideo = (findWorkout(record.workoutId)||{}).type === "video";
     var html = '<h2 class="disp">Séance enregistrée</h2>' +
       '<div class="muted">' + record.workoutName + ' · ' + fmtDateFull(record.date) + '</div>' +
-      '<div class="stat-grid" style="margin-top:14px;">' +
-        stat(fmtDur(record.durationMin), "Durée") + stat(doneTotal + "/" + total, "Exercices faits");
+      '<div class="stat-grid" style="margin-top:14px;">' + stat(fmtDur(record.durationMin), "Durée");
+    if(!isVideo){
+      var doneTotal=0, total=0;
+      record.exercises.forEach(function(e){ participants.forEach(function(pid){ total++; if(e.entries[pid].done) doneTotal++; }); });
+      html += stat(doneTotal + "/" + total, "Exercices faits");
+    }
     participants.forEach(function(pid){
-      html += stat(Math.round(record.caloriesByPerson[pid]) + " kcal", personName(pid) + " · calories") +
-              stat(Math.round(record.volumeByPerson[pid]) + " kg", personName(pid) + " · volume");
+      html += stat(Math.round(record.caloriesByPerson[pid]) + " kcal", personName(pid) + " · calories");
+      if(!isVideo) html += stat(Math.round(record.volumeByPerson[pid]) + " kg", personName(pid) + " · volume");
     });
     html += '</div>';
     participants.forEach(function(pid){
@@ -1493,6 +1537,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     }
     list.forEach(function(s){
       var participants = s.participants || state.people.map(function(p){return p.id;});
+      var isVideo = (findWorkout(s.workoutId)||{}).type === "video";
       var doneN=0, total=0;
       s.exercises.forEach(function(e){ participants.forEach(function(pid){ total++; if(e.entries[pid].done) doneN++; }); });
       html += '<div class="hist-item" data-hist="' + s.id + '">' +
@@ -1501,16 +1546,17 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         '<button class="icon-btn" data-del-session="' + s.id + '"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></div>' +
         '<div class="row" style="margin-top:8px; gap:16px; flex-wrap:wrap;">' +
         participants.map(function(pid){
-          return '<span class="faint num">' + personName(pid) + ': ' + Math.round(s.caloriesByPerson[pid]) + ' kcal · ' + Math.round(s.volumeByPerson[pid]) + ' kg</span>';
+          return '<span class="faint num">' + personName(pid) + ': ' + Math.round(s.caloriesByPerson[pid]) + ' kcal' + (isVideo?'':' · ' + Math.round(s.volumeByPerson[pid]) + ' kg') + '</span>';
         }).join("") + '</div>' +
         '<div class="hist-detail" id="detail-' + s.id + '">' +
+          (isVideo ? '<div class="faint">Cours vidéo — pas de détail exercice par exercice.</div>' :
           s.exercises.map(function(e){
             return '<div class="exname">' + e.name + '</div>' + participants.map(function(pid){
               var en = e.entries[pid];
               return '<div class="exline"><span>' + (en.done?"✓ ":"— ") + personName(pid) + '</span><span class="num">' +
                 (e.trackWeight ? en.weight + " kg × " : "") + e.sets + "×" + en.reps + '</span></div>';
             }).join("");
-          }).join("") +
+          }).join("")) +
         '</div></div>';
     });
     html += '</div>';
