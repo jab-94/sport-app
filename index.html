@@ -31,8 +31,19 @@
   var MIN_VALID_H = 200;
   function setVVH(){
     var h = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
-    if (window.navigator.standalone && window.screen && window.screen.height > h) {
-      h = window.screen.height;
+    if (window.navigator.standalone && window.screen) {
+      // window.screen.width/height don't reliably rotate with the device on iOS — confirmed
+      // on an iPad in LANDSCAPE, where screen.height stayed pinned at the portrait value
+      // (1180) while the real visible height was 820 (the physically SHORTER dimension in
+      // landscape). Blindly using screen.height there inflated the page to 1180px tall,
+      // pushing the nav bar 327px below the visible 820px window — you had to scroll to
+      // reach it. Picking whichever of screen.width/height matches the current orientation
+      // (the larger one in portrait, the smaller one in landscape) fixes that on any device.
+      // The 150px cap keeps this limited to correcting the known small iPhone shortfall
+      // (== the safe-area-inset-top) instead of ever overriding by hundreds of pixels again.
+      var landscape = window.innerWidth > window.innerHeight;
+      var physical = landscape ? Math.min(window.screen.width, window.screen.height) : Math.max(window.screen.width, window.screen.height);
+      if (physical > h && (physical - h) < 150) h = physical;
     }
     if (h < MIN_VALID_H) return; // ignore a bogus mid-transition reading, keep the last good one
     document.documentElement.style.setProperty("--vvh", (h * 0.01) + "px");
@@ -534,7 +545,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b39";
+  var BUILD_VERSION = "b40";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
