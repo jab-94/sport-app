@@ -42,7 +42,18 @@
     if(!el) return;
     el.style.webkitOverflowScrolling = "auto";
     void el.offsetHeight; // force layout to actually apply the change before flipping it back
-    requestAnimationFrame(function(){ el.style.webkitOverflowScrolling = "touch"; });
+    requestAnimationFrame(function(){
+      el.style.webkitOverflowScrolling = "touch";
+      // The overflow-scrolling toggle above is the original (iOS 8-10 era) fix and is
+      // close to a no-op on current iOS — it's the reflow it forces that helps, not the
+      // property itself. Nudging scrollTop by a pixel and back is what actually forces
+      // WKWebView's separate scrolling thread to resync with the main thread on modern
+      // versions, which the toggle alone wasn't reliably doing (see closeOverlay for the
+      // video-modal case, where this alone still wasn't enough).
+      var prev = el.scrollTop;
+      el.scrollTop = prev + 1;
+      el.scrollTop = prev;
+    });
   }
   function onResume(){
     // The screen doesn't finish settling the instant visibilitychange/pageshow fires, so
@@ -512,7 +523,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b35";
+  var BUILD_VERSION = "b36";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -896,7 +907,18 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     overlay.classList.remove("show");
     if(sheet){
       var vid = sheet.querySelector("video");
-      if(vid){ try{ vid.pause(); }catch(e){} }
+      if(vid){
+        try{
+          vid.pause();
+          // Pausing alone leaves iOS's hardware video-decode session for this <video> open,
+          // and THAT (not just the momentary background-like state) is what was keeping
+          // the scroll view degraded even after the kickScroll reflow — confirmed still
+          // reproducing with pause() alone. Dropping the src and reloading fully releases
+          // the decoder.
+          vid.removeAttribute("src");
+          vid.load();
+        }catch(e){}
+      }
     }
     if(window.__kickScrollAfterOverlay) window.__kickScrollAfterOverlay();
   }
