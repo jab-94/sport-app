@@ -523,7 +523,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b36";
+  var BUILD_VERSION = "b37";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -584,6 +584,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     return {
       contentVersion: CONTENT_VERSION,
       theme: "orange",
+      restDurationDefault: 90,
       people: [{id:"p1", name:"Am"}, {id:"p2", name:"Jab"}],
       bodyWeights: { p1:65, p2:78 },
       // Optional per-person profile used to estimate daily calorie & protein targets
@@ -695,7 +696,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     return st;
   }
 
-  var state = ensureBodyWeightLog(ensureBodyProfiles(migrateContent(load())));
+  var state = ensureRestDuration(ensureBodyWeightLog(ensureBodyProfiles(migrateContent(load()))));
   // Older saves (before the nutrition feature) have no bodyProfiles at all, or are missing
   // an entry for a person added since. Patch defaults in rather than bumping CONTENT_VERSION,
   // which would also touch workouts/exercises the person may have hand-edited.
@@ -710,6 +711,11 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   function ensureBodyWeightLog(st){
     if(!st.bodyWeightLog) st.bodyWeightLog = {};
     st.people.forEach(function(pl){ if(!st.bodyWeightLog[pl.id]) st.bodyWeightLog[pl.id] = []; });
+    return st;
+  }
+  // Same idea for saves made before the rest timer's default duration was configurable.
+  function ensureRestDuration(st){
+    if(!st.restDurationDefault) st.restDurationDefault = 90;
     return st;
   }
   function load(){
@@ -773,7 +779,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // so it deliberately does NOT go through save() (that would re-stamp syncVersion with
   // Date.now() and immediately push the exact thing we just pulled straight back up).
   function adoptRemoteState(remote){
-    state = ensureBodyWeightLog(ensureBodyProfiles(migrateContent(remote)));
+    state = ensureRestDuration(ensureBodyWeightLog(ensureBodyProfiles(migrateContent(remote))));
     persistLocally();
   }
 
@@ -1170,8 +1176,10 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // or syncing. It survives renderSession()'s frequent full re-renders (tapping any check
   // or stepper rebuilds $view) because #session-bar sits outside $view in the DOM, and
   // updateSessionBar() (already ticking every second) re-hydrates its display from these
-  // vars every time, rather than the DOM itself holding the countdown.
-  var restEndsAt = null, restDuration = 90, restBuzzed = false;
+  // vars every time, rather than the DOM itself holding the countdown. The default duration
+  // itself (state.restDurationDefault) DOES live in `state` — it's a shared preference,
+  // set in Réglages, not per-session throwaway UI like the countdown deadline is.
+  var restEndsAt = null, restBuzzed = false;
   function renderSession(){
     clearInterval(sessionTimerHandle);
     var sess = state.activeSession;
@@ -1330,7 +1338,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       '<div class="row between" id="rest-row">' +
         '<button class="btn btn-line btn-sm" id="rest-start" type="button">' +
           '<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;vertical-align:-2px;margin-right:5px;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
-          'Repos ' + restDuration + 's' +
+          'Repos ' + state.restDurationDefault + 's' +
         '</button>' +
         '<div class="row" id="rest-running" style="gap:8px; display:none;">' +
           '<span id="rest-time" class="num"></span>' +
@@ -1341,7 +1349,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     document.getElementById("app").insertBefore(bar, document.getElementById("tabs"));
     document.getElementById("sb-finish").addEventListener("click", finishSession);
     document.getElementById("rest-start").addEventListener("click", function(){
-      restEndsAt = Date.now() + restDuration*1000; restBuzzed = false; updateSessionBar();
+      restEndsAt = Date.now() + state.restDurationDefault*1000; restBuzzed = false; updateSessionBar();
     });
     document.getElementById("rest-plus15").addEventListener("click", function(){
       if(restEndsAt) restEndsAt += 15000; updateSessionBar();
@@ -1713,6 +1721,15 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       '<div class="faint">' + escapeAttr((ACCENT_THEMES[state.theme||"orange"]).label) + ' — change ta couleur quand l’humeur te prend.</div>' +
     '</div>';
 
+    html += '<div class="card row between" style="gap:12px;">' +
+      '<div><div class="section-title" style="margin:0;">Minuteur de repos</div>' +
+      '<div class="faint" style="margin-top:2px;">Durée par défaut entre les séries.</div></div>' +
+      '<div class="row" style="gap:4px; flex-shrink:0;">' +
+        '<input type="number" id="rest-duration-input" min="10" step="5" value="' + state.restDurationDefault + '" style="width:56px; text-align:center;">' +
+        '<span class="muted">sec</span>' +
+      '</div>' +
+    '</div>';
+
     html += '<div class="card stack" data-workout="vousdeux">' +
       '<button class="workout-toggle" data-toggle-workout="vousdeux" type="button">' +
         '<h3>Vous deux</h3>' +
@@ -1807,6 +1824,13 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         state.theme = btn.getAttribute("data-theme-pick");
         applyTheme(); save(); renderSettings();
       });
+    });
+    document.getElementById("rest-duration-input").addEventListener("change", function(){
+      var v = parseInt(this.value, 10);
+      if(isNaN(v) || v < 10) v = state.restDurationDefault;
+      this.value = v;
+      state.restDurationDefault = v;
+      save();
     });
     $view.querySelectorAll("[data-person-name]").forEach(function(inp){
       inp.addEventListener("change", function(){
@@ -1947,7 +1971,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     reader.onload = function(){
       try{
         var parsed = JSON.parse(reader.result);
-        if(parsed && parsed.workouts && parsed.people){ state = ensureBodyWeightLog(ensureBodyProfiles(parsed)); applyTheme(); save(); render(); showAlert("Données importées."); }
+        if(parsed && parsed.workouts && parsed.people){ state = ensureRestDuration(ensureBodyWeightLog(ensureBodyProfiles(parsed))); applyTheme(); save(); render(); showAlert("Données importées."); }
         else showAlert("Fichier invalide.");
       }catch(err){ showAlert("Fichier invalide."); }
     };
