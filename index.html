@@ -299,6 +299,7 @@ nav#tabs button.active svg{stroke:var(--accent);}
 .pill{flex:1; text-align:center; padding:9px 6px; border-radius:12px; font-size:13px; font-weight:600; border:none; background:none; color:var(--ink-soft); transition:background .2s, color .2s;}
 .pill.active{background:rgba(255,255,255,.1); color:var(--p1); box-shadow:inset 0 1px 0 var(--glass-hi);}
 .pill.active.p2{color:var(--p2);}
+.pill.active.neutral{color:var(--accent);}
 
 .ex-card{
   border:1px solid var(--glass-border); border-radius:18px; padding:14px;
@@ -373,12 +374,16 @@ nav#tabs button.active svg{stroke:var(--accent);}
   flex:0 0 auto; margin:0 0 10px; padding:12px 16px;
   background:var(--glass-bg-strong); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
   border:1px solid var(--glass-border); border-radius:20px; box-shadow:var(--shadow), inset 0 1px 0 var(--glass-hi);
-  display:flex; align-items:center; gap:12px;
+  display:flex; flex-direction:column; gap:10px;
 }
 #session-bar .prog{font-size:12.5px; color:var(--ink-soft); flex-shrink:0;}
 #session-bar .time{font-size:12.5px; margin-left:auto; margin-right:2px; color:var(--ink-soft); flex-shrink:0;}
 .progress-track{height:6px; background:var(--surface-2); border-radius:99px; overflow:hidden; flex:1;}
 .progress-fill{height:100%; background:var(--accent); border-radius:99px; transition:width .2s;}
+#rest-row{border-top:1px solid var(--glass-border); padding-top:10px;}
+#rest-time{font-family:"IBM Plex Mono"; font-size:15px; font-weight:600; min-width:46px; text-align:center;}
+#rest-time.done{ color:var(--accent); animation:nudgeGlow 1s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce){ #rest-time.done{ animation:none; } }
 
 .stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
 .stat-tile{
@@ -507,7 +512,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b34";
+  var BUILD_VERSION = "b35";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -575,6 +580,10 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       // yet" — the nutrition card in Progrès just asks for them instead of guessing.
       bodyProfiles: { p1:{sex:"f", age:null, heightCm:null, activity:"mod", goal:"maintien"},
                        p2:{sex:"m", age:null, heightCm:null, activity:"mod", goal:"maintien"} },
+      // Dated log of body-weight readings per person (see logBodyWeight) — bodyWeights above
+      // stays the single "current" number everything else (calorie burn, nutrition targets)
+      // reads, this is purely the history for the Progrès chart.
+      bodyWeightLog: { p1:[], p2:[] },
       currentTab: "home",
       currentPerson: "p1",
       activeSession: null,
@@ -675,7 +684,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     return st;
   }
 
-  var state = ensureBodyProfiles(migrateContent(load()));
+  var state = ensureBodyWeightLog(ensureBodyProfiles(migrateContent(load())));
   // Older saves (before the nutrition feature) have no bodyProfiles at all, or are missing
   // an entry for a person added since. Patch defaults in rather than bumping CONTENT_VERSION,
   // which would also touch workouts/exercises the person may have hand-edited.
@@ -684,6 +693,12 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     st.people.forEach(function(pl){
       if(!st.bodyProfiles[pl.id]) st.bodyProfiles[pl.id] = {sex:"m", age:null, heightCm:null, activity:"mod", goal:"maintien"};
     });
+    return st;
+  }
+  // Same idea for saves made before the body-weight log existed.
+  function ensureBodyWeightLog(st){
+    if(!st.bodyWeightLog) st.bodyWeightLog = {};
+    st.people.forEach(function(pl){ if(!st.bodyWeightLog[pl.id]) st.bodyWeightLog[pl.id] = []; });
     return st;
   }
   function load(){
@@ -703,6 +718,26 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   function save(){ state.syncVersion = Date.now(); persistLocally(); scheduleCloudSync(); }
   function persistLocally(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){} }
 
+  // Device identity is deliberately NOT part of `state` — it must survive adoptRemoteState()
+  // wholesale-replacing `state` with whatever another iPhone last pushed, so it lives in its
+  // own localStorage key instead.
+  var DEVICE_NAME_KEY = "sport-device-name";
+  function getDeviceName(){ try{ return localStorage.getItem(DEVICE_NAME_KEY) || ""; }catch(e){ return ""; } }
+  function setDeviceName(name){ try{ localStorage.setItem(DEVICE_NAME_KEY, name); }catch(e){} }
+
+  // Cache of "who last touched the shared cloud doc, and when" — refreshed whenever this
+  // device talks to Firestore (push or pull), shown in Réglages so you can confirm a session
+  // logged on another iPhone actually made it up. Not part of `state`: it describes the
+  // cloud doc, not this device's own data.
+  var lastRemoteInfo = null;
+  function refreshRemoteStatusUI(){
+    var el = document.getElementById("cloud-remote-status");
+    if(!el) return;
+    if(!lastRemoteInfo) { el.textContent = "Dernière synchro : inconnue"; return; }
+    var age = lastRemoteInfo.updatedAtMs ? fmtBackupAge(new Date(lastRemoteInfo.updatedAtMs).toISOString()) : "à l’instant";
+    el.textContent = "Dernière synchro : " + (lastRemoteInfo.device || "un appareil") + ", " + age;
+  }
+
   // Debounced so a burst of stepper taps doesn't fire a write per tap — the cloud module
   // (loaded further down the page) may not be ready yet on the very first save() of a
   // session, hence the guard; scheduleCloudSync() just gets called again on the next save().
@@ -711,11 +746,13 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     if(!window.__cloudSync) return;
     clearTimeout(cloudSyncTimer);
     cloudSyncTimer = setTimeout(function(){
-      window.__cloudSync.save(state).then(function(){
+      window.__cloudSync.save(state, getDeviceName()).then(function(){
         state.lastCloudSyncAt = new Date().toISOString();
         persistLocally();
+        lastRemoteInfo = { device: getDeviceName(), updatedAtMs: Date.now() };
         var el = document.getElementById("cloud-sync-status");
         if(el) el.textContent = "Sauvegarde cloud : " + fmtBackupAge(state.lastCloudSyncAt);
+        refreshRemoteStatusUI();
       }).catch(function(err){ console.warn("cloud sync failed", err); });
     }, 1500);
   }
@@ -725,7 +762,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // so it deliberately does NOT go through save() (that would re-stamp syncVersion with
   // Date.now() and immediately push the exact thing we just pulled straight back up).
   function adoptRemoteState(remote){
-    state = ensureBodyProfiles(migrateContent(remote));
+    state = ensureBodyWeightLog(ensureBodyProfiles(migrateContent(remote)));
     persistLocally();
   }
 
@@ -736,10 +773,12 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // check (leaving the session, or reopening later) catches up instead.
   function checkCloudForUpdates(){
     if(!window.__cloudSync || state.activeSession) return;
-    window.__cloudSync.restore().then(function(remote){
-      if(!remote) return;
-      if((remote.syncVersion||0) > (state.syncVersion||0)){
-        adoptRemoteState(remote);
+    window.__cloudSync.restore().then(function(result){
+      if(!result) return;
+      lastRemoteInfo = { device: result.device, updatedAtMs: result.updatedAtMs };
+      refreshRemoteStatusUI();
+      if((result.state.syncVersion||0) > (state.syncVersion||0)){
+        adoptRemoteState(result.state);
         applyTheme(); render();
       }
     }).catch(function(err){ console.warn("cloud pull failed", err); });
@@ -1048,6 +1087,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   function cancelSession(){
     showConfirm("Annuler la séance ?", "Rien ne sera enregistré pour cette séance en cours.", "Annuler la séance", function(){
       clearInterval(sessionTimerHandle);
+      restEndsAt = null;
       state.activeSession = null;
       state.currentTab = "home";
       save(); render();
@@ -1104,6 +1144,12 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
 
   // ---------- SESSION ----------
   var sessionTimerHandle = null;
+  // Rest timer state lives here, not in `state` — it's throwaway UI, not data worth saving
+  // or syncing. It survives renderSession()'s frequent full re-renders (tapping any check
+  // or stepper rebuilds $view) because #session-bar sits outside $view in the DOM, and
+  // updateSessionBar() (already ticking every second) re-hydrates its display from these
+  // vars every time, rather than the DOM itself holding the countdown.
+  var restEndsAt = null, restDuration = 90, restBuzzed = false;
   function renderSession(){
     clearInterval(sessionTimerHandle);
     var sess = state.activeSession;
@@ -1252,14 +1298,38 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     var old = document.getElementById("session-bar"); if(old) old.remove();
     var bar = document.createElement("div");
     bar.id = "session-bar";
-    bar.innerHTML = '<span class="prog num" id="sb-count"></span>' +
-      '<div class="progress-track"><div class="progress-fill" id="sb-fill"></div></div>' +
-      '<span class="time num" id="sb-time"></span>' +
-      '<button class="btn btn-accent btn-sm" id="sb-finish">Terminer</button>';
+    bar.innerHTML =
+      '<div class="row" style="gap:12px;">' +
+        '<span class="prog num" id="sb-count"></span>' +
+        '<div class="progress-track"><div class="progress-fill" id="sb-fill"></div></div>' +
+        '<span class="time num" id="sb-time"></span>' +
+        '<button class="btn btn-accent btn-sm" id="sb-finish">Terminer</button>' +
+      '</div>' +
+      '<div class="row between" id="rest-row">' +
+        '<button class="btn btn-line btn-sm" id="rest-start" type="button">' +
+          '<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;vertical-align:-2px;margin-right:5px;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
+          'Repos ' + restDuration + 's' +
+        '</button>' +
+        '<div class="row" id="rest-running" style="gap:8px; display:none;">' +
+          '<span id="rest-time" class="num"></span>' +
+          '<button class="btn btn-line btn-sm" id="rest-plus15" type="button">+15s</button>' +
+          '<button class="icon-btn" id="rest-cancel" type="button"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
+        '</div>' +
+      '</div>';
     document.getElementById("app").insertBefore(bar, document.getElementById("tabs"));
     document.getElementById("sb-finish").addEventListener("click", finishSession);
+    document.getElementById("rest-start").addEventListener("click", function(){
+      restEndsAt = Date.now() + restDuration*1000; restBuzzed = false; updateSessionBar();
+    });
+    document.getElementById("rest-plus15").addEventListener("click", function(){
+      if(restEndsAt) restEndsAt += 15000; updateSessionBar();
+    });
+    document.getElementById("rest-cancel").addEventListener("click", function(){
+      restEndsAt = null; updateSessionBar();
+    });
     updateSessionBar();
   }
+  function fmtSec(totalSec){ var s = Math.max(0, Math.round(totalSec)); return Math.floor(s/60) + ":" + String(s%60).padStart(2,"0"); }
   function updateSessionBar(){
     var sess = state.activeSession; if(!sess) return;
     var done=0, total=0;
@@ -1269,11 +1339,32 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     if(countEl) countEl.textContent = done + "/" + total;
     if(fillEl) fillEl.style.width = (total? (done/total*100):0) + "%";
     if(timeEl) timeEl.textContent = fmtDur(elapsedMin);
+
+    var startBtn = document.getElementById("rest-start"), running = document.getElementById("rest-running"), timeSpan = document.getElementById("rest-time");
+    if(startBtn && running){
+      if(restEndsAt){
+        var remaining = (restEndsAt - Date.now()) / 1000;
+        startBtn.style.display = "none"; running.style.display = "flex";
+        if(remaining > 0){
+          timeSpan.textContent = fmtSec(remaining); timeSpan.classList.remove("done");
+        } else {
+          timeSpan.textContent = "0:00"; timeSpan.classList.add("done");
+          if(!restBuzzed){
+            restBuzzed = true;
+            if(navigator.vibrate) try{ navigator.vibrate([200,100,200,100,200]); }catch(e){}
+            setTimeout(function(){ restEndsAt = null; updateSessionBar(); }, 2000);
+          }
+        }
+      } else {
+        startBtn.style.display = ""; running.style.display = "none";
+      }
+    }
     save();
   }
 
   function finishSession(){
     clearInterval(sessionTimerHandle);
+    restEndsAt = null;
     var sess = state.activeSession;
     var w = findWorkout(sess.workoutId);
     var participants = sess.participants || state.people.map(function(p){return p.id;});
@@ -1352,13 +1443,24 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   function stat(v,l){ return '<div class="stat-tile"><div class="v">' + v + '</div><div class="l">' + l + '</div></div>'; }
 
   // ---------- HISTORY ----------
+  var historyFilter = "all"; // which workout type is shown — resets on reload, like settingsOpen
   function renderHistory(){
-    var list = state.sessions.slice().reverse();
-    if(!list.length){
+    var all = state.sessions.slice().reverse();
+    if(!all.length){
       $view.innerHTML = '<div class="empty">Aucune séance enregistrée pour l’instant.<br>Commence une séance depuis l’onglet Séances.</div>';
       return;
     }
+    var list = historyFilter==="all" ? all : all.filter(function(s){ return s.workoutId===historyFilter; });
     var html = '<div class="stack enter-anim" style="margin-top:6px;">';
+    html += '<div class="pill-group">' +
+      '<button class="pill neutral' + (historyFilter==="all"?" active":"") + '" data-hist-filter="all">Tout</button>' +
+      state.workouts.map(function(w){
+        return '<button class="pill neutral' + (historyFilter===w.id?" active":"") + '" data-hist-filter="' + w.id + '">' + w.name + '</button>';
+      }).join("") +
+    '</div>';
+    if(!list.length){
+      html += '<div class="empty">Aucune séance de ce type pour l’instant.</div>';
+    }
     list.forEach(function(s){
       var participants = s.participants || state.people.map(function(p){return p.id;});
       var doneN=0, total=0;
@@ -1383,6 +1485,9 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     });
     html += '</div>';
     $view.innerHTML = html;
+    $view.querySelectorAll("[data-hist-filter]").forEach(function(btn){
+      btn.addEventListener("click", function(){ historyFilter = btn.getAttribute("data-hist-filter"); renderHistory(); });
+    });
     $view.querySelectorAll("[data-hist]").forEach(function(card){
       card.addEventListener("click", function(){ document.getElementById("detail-" + card.getAttribute("data-hist")).classList.toggle("show"); });
     });
@@ -1424,6 +1529,17 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     html += '<div class="section-title">' + escapeAttr(personName(pid)) + ' — calories &amp; volume</div>';
     html += '<div class="stat-grid">' + stat(Math.round(totalCal) + " kcal", "Calories cumulées (est.)") + stat(Math.round(totalVolume) + " kg", "Volume total soulevé") + '</div>';
 
+    html += '<div class="section-title">Poids corporel — ' + escapeAttr(personName(pid)) + '</div>';
+    var wlog = (state.bodyWeightLog && state.bodyWeightLog[pid]) || [];
+    var wpoints = wlog.map(function(entry){ return { date:entry.date, value:entry.weight }; });
+    var wsvg = renderLineChartSvg(wpoints, " kg");
+    html += '<div class="chart-wrap">' + (wsvg || '<div class="faint">Enregistre quelques pesées pour voir la courbe' + (wpoints.length===1?" (poids actuel : "+wpoints[0].value+" kg)":"") + '.</div>') + '</div>';
+    html += '<div class="card row" style="gap:10px;">' +
+      '<input type="number" id="weight-log-input" value="' + (state.bodyWeights[pid]||"") + '" step="0.1" style="flex:1; min-width:0;">' +
+      '<span class="muted">kg</span>' +
+      '<button class="btn btn-accent btn-sm" id="weight-log-btn" style="flex-shrink:0;">Enregistrer</button>' +
+    '</div>';
+
     html += '<div class="section-title">Objectifs nutrition — ' + escapeAttr(personName(pid)) + '</div>';
     var nut = calcNutritionTargets(pid);
     if(nut){
@@ -1458,6 +1574,12 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     });
     var gotoSettingsBtn = document.getElementById("goto-settings-nutrition");
     if(gotoSettingsBtn) gotoSettingsBtn.addEventListener("click", function(){ state.currentTab = "settings"; render(); });
+    document.getElementById("weight-log-btn").addEventListener("click", function(){
+      var v = parseFloat(document.getElementById("weight-log-input").value);
+      if(isNaN(v) || v<=0) return;
+      logBodyWeight(pid, v);
+      renderProgress();
+    });
 
     var sel = document.getElementById("ex-select");
     if(trackable.length){
@@ -1503,35 +1625,56 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       '<line x1="0" y1="' + (H-pad) + '" x2="400" y2="' + (H-pad) + '" stroke="var(--line)"/>' + bars + '</svg>';
   }
 
+  // Shared by the exercise-load chart and the body-weight chart: a simple line+dots SVG
+  // over dated {date, value} points, labelling only the endpoints (first/last date, last
+  // value) to keep it readable at this size. Returns null when there isn't enough data to
+  // draw a line, so callers can show their own "not enough data yet" message instead.
+  function renderLineChartSvg(points, unitSuffix){
+    if(points.length < 2) return null;
+    var H=130, W=400, padL=8, padR=8, padT=14, padB=20;
+    var min = Math.min.apply(null, points.map(function(p){return p.value;}));
+    var max = Math.max.apply(null, points.map(function(p){return p.value;}));
+    if(min===max){ min-=1; max+=1; }
+    function X(i){ return padL + (i/(points.length-1)) * (W-padL-padR); }
+    function Y(v){ return padT + (1 - (v-min)/(max-min)) * (H-padT-padB); }
+    var path = points.map(function(p,i){ return (i===0?"M":"L") + X(i).toFixed(1) + "," + Y(p.value).toFixed(1); }).join(" ");
+    var dots = points.map(function(p,i){
+      var last = i===points.length-1;
+      return '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(p.value).toFixed(1) + '" r="' + (last?4:2.5) + '" fill="' + (last?'var(--accent)':'var(--ink-faint)') + '"/>' +
+        (last ? '<text x="' + X(i).toFixed(1) + '" y="' + (Y(p.value)-9).toFixed(1) + '" text-anchor="end" fill="var(--accent)" font-weight="600">' + p.value + unitSuffix + '</text>' : '');
+    }).join("");
+    var labels = '<text x="' + X(0).toFixed(1) + '" y="' + (H-4) + '">' + fmtDate(points[0].date) + '</text>' +
+      '<text x="' + X(points.length-1).toFixed(1) + '" y="' + (H-4) + '" text-anchor="end">' + fmtDate(points[points.length-1].date) + '</text>';
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '">' +
+      '<line x1="' + padL + '" y1="' + (H-padB) + '" x2="' + (W-padR) + '" y2="' + (H-padB) + '" stroke="var(--line)"/>' +
+      '<path d="' + path + '" fill="none" stroke="var(--accent)" stroke-width="2"/>' + dots + labels + '</svg>';
+  }
+
   function drawExerciseChart(exId, pid){
     var points = [];
     state.sessions.forEach(function(s){
       s.exercises.forEach(function(e){
-        if(e.exId===exId && e.trackWeight && e.entries[pid] && e.entries[pid].done) points.push({ date:s.date, weight:e.entries[pid].weight });
+        if(e.exId===exId && e.trackWeight && e.entries[pid] && e.entries[pid].done) points.push({ date:s.date, value:e.entries[pid].weight });
       });
     });
     var el = document.getElementById("ex-chart");
-    if(points.length < 2){
-      el.innerHTML = '<div class="faint">Pas encore assez de séances enregistrées pour tracer une courbe' + (points.length===1?" (poids actuel : "+points[0].weight+" kg)":"") + '.</div>';
-      return;
-    }
-    var H=130, W=400, padL=8, padR=8, padT=14, padB=20;
-    var min = Math.min.apply(null, points.map(function(p){return p.weight;}));
-    var max = Math.max.apply(null, points.map(function(p){return p.weight;}));
-    if(min===max){ min-=1; max+=1; }
-    function X(i){ return padL + (i/(points.length-1)) * (W-padL-padR); }
-    function Y(v){ return padT + (1 - (v-min)/(max-min)) * (H-padT-padB); }
-    var path = points.map(function(p,i){ return (i===0?"M":"L") + X(i).toFixed(1) + "," + Y(p.weight).toFixed(1); }).join(" ");
-    var dots = points.map(function(p,i){
-      var last = i===points.length-1;
-      return '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(p.weight).toFixed(1) + '" r="' + (last?4:2.5) + '" fill="' + (last?'var(--accent)':'var(--ink-faint)') + '"/>' +
-        (last ? '<text x="' + X(i).toFixed(1) + '" y="' + (Y(p.weight)-9).toFixed(1) + '" text-anchor="end" fill="var(--accent)" font-weight="600">' + p.weight + ' kg</text>' : '');
-    }).join("");
-    var labels = '<text x="' + X(0).toFixed(1) + '" y="' + (H-4) + '">' + fmtDate(points[0].date) + '</text>' +
-      '<text x="' + X(points.length-1).toFixed(1) + '" y="' + (H-4) + '" text-anchor="end">' + fmtDate(points[points.length-1].date) + '</text>';
-    el.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '">' +
-      '<line x1="' + padL + '" y1="' + (H-padB) + '" x2="' + (W-padR) + '" y2="' + (H-padB) + '" stroke="var(--line)"/>' +
-      '<path d="' + path + '" fill="none" stroke="var(--accent)" stroke-width="2"/>' + dots + labels + '</svg>';
+    var svg = renderLineChartSvg(points, " kg");
+    el.innerHTML = svg || ('<div class="faint">Pas encore assez de séances enregistrées pour tracer une courbe' + (points.length===1?" (poids actuel : "+points[0].value+" kg)":"") + '.</div>');
+  }
+
+  // ---------- BODY WEIGHT LOG ----------
+  // Overwrites the same day's entry rather than appending, so fixing a typo (or just
+  // re-logging the same morning) doesn't create a second point for one real reading.
+  function logBodyWeight(pid, weight){
+    state.bodyWeights[pid] = weight;
+    if(!state.bodyWeightLog) state.bodyWeightLog = {};
+    var log = state.bodyWeightLog[pid] || (state.bodyWeightLog[pid] = []);
+    var today = new Date().toISOString().slice(0,10);
+    var idx = log.findIndex(function(entry){ return entry.date.slice(0,10) === today; });
+    var entry = { date: new Date().toISOString(), weight: weight };
+    if(idx >= 0) log[idx] = entry; else log.push(entry);
+    log.sort(function(a,b){ return new Date(a.date) - new Date(b.date); });
+    save();
   }
 
   // ---------- SETTINGS ----------
@@ -1613,15 +1756,19 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     });
 
     html += '<div class="card stack"><div class="section-title">Sauvegarde</div>' +
-      '<div class="faint">Les données ne vivent que sur cet appareil (mémoire de Safari) — aucun cloud automatique. Exporte de temps en temps pour ne rien perdre en cas de suppression accidentelle.</div>' +
+      '<div class="faint">Sauvegardée automatiquement dans le cloud à chaque modification, partagée entre tous tes appareils. Exporte aussi en local de temps en temps si tu veux une copie portable.</div>' +
+      '<label class="pf-field">Nom de cet appareil<input type="text" id="device-name-input" placeholder="ex: iPhone d’Am" value="' + escapeAttr(getDeviceName()) + '"></label>' +
       '<div class="row" style="gap:10px;"><button class="btn btn-line" id="export-btn" style="flex:1;">Exporter</button>' +
       '<button class="btn btn-line" id="import-btn" style="flex:1;">Importer</button></div>' +
       '<div class="faint">Dernière sauvegarde manuelle : ' + fmtBackupAge(state.lastBackupAt) + '</div>' +
       '<div class="faint" id="cloud-sync-status">Sauvegarde cloud : ' + fmtBackupAge(state.lastCloudSyncAt) + '</div>' +
+      '<div class="faint" id="cloud-remote-status">Dernière synchro : inconnue</div>' +
       '<button class="btn btn-line" id="cloud-restore-btn">Restaurer depuis le cloud</button>' +
       '<button class="btn btn-line" id="reset-btn" style="color:var(--accent); border-color:var(--accent);">Réinitialiser toutes les données</button></div>';
     html += '</div>';
     $view.innerHTML = html;
+    refreshRemoteStatusUI();
+    document.getElementById("device-name-input").addEventListener("change", function(){ setDeviceName(this.value.trim()); });
 
     $view.querySelectorAll("[data-toggle-workout]").forEach(function(btn){
       btn.addEventListener("click", function(){
@@ -1720,9 +1867,10 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     document.getElementById("cloud-restore-btn").addEventListener("click", function(){
       showConfirm("Restaurer depuis le cloud", "Remplace toutes les données de cet appareil par la dernière sauvegarde cloud partagée. Continuer ?", "Restaurer", function(){
         if(!window.__cloudSync){ showAlert("La connexion au cloud n'est pas prête, réessaie dans un instant."); return; }
-        window.__cloudSync.restore().then(function(remote){
-          if(!remote){ showAlert("Aucune sauvegarde cloud trouvée."); return; }
-          adoptRemoteState(remote);
+        window.__cloudSync.restore().then(function(result){
+          if(!result){ showAlert("Aucune sauvegarde cloud trouvée."); return; }
+          lastRemoteInfo = { device: result.device, updatedAtMs: result.updatedAtMs };
+          adoptRemoteState(result.state);
           applyTheme(); render();
         }).catch(function(){ showAlert("Impossible de contacter le cloud pour le moment — vérifie ta connexion internet."); });
       }, true);
@@ -1777,7 +1925,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     reader.onload = function(){
       try{
         var parsed = JSON.parse(reader.result);
-        if(parsed && parsed.workouts && parsed.people){ state = ensureBodyProfiles(parsed); applyTheme(); save(); render(); showAlert("Données importées."); }
+        if(parsed && parsed.workouts && parsed.people){ state = ensureBodyWeightLog(ensureBodyProfiles(parsed)); applyTheme(); save(); render(); showAlert("Données importées."); }
         else showAlert("Fichier invalide.");
       }catch(err){ showAlert("Fichier invalide."); }
     };
@@ -1868,15 +2016,22 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   });
 
   window.__cloudSync = {
-    save: function(stateObj){
+    // deviceName is metadata ABOUT the push (who made it), stored as its own field
+    // alongside the data rather than inside the JSON blob — adopting a pull overwrites
+    // the whole app state, and a device's own name must never get clobbered by that.
+    save: function(stateObj, deviceName){
       return authReady.then(function(){
-        return setDoc(sharedDoc, { json: JSON.stringify(stateObj), updatedAt: serverTimestamp() });
+        return setDoc(sharedDoc, { json: JSON.stringify(stateObj), updatedAt: serverTimestamp(), device: deviceName || "" });
       });
     },
     restore: function(){
       return authReady.then(function(){ return getDoc(sharedDoc); }).then(function(snap){
         if(!snap.exists()) return null;
-        try{ return JSON.parse(snap.data().json); }catch(e){ return null; }
+        var data = snap.data();
+        var st = null;
+        try{ st = JSON.parse(data.json); }catch(e){ return null; }
+        var ts = data.updatedAt && data.updatedAt.toMillis ? data.updatedAt.toMillis() : null;
+        return { state: st, device: data.device || "", updatedAtMs: ts };
       });
     }
   };
