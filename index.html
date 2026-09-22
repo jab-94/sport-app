@@ -201,13 +201,21 @@ button{font-family:inherit; cursor:pointer;}
 input,select{font-family:inherit;}
 a{color:var(--accent);}
 
-/* #app is the whole screen: a static flex column, not a scrolling document. Only #view (the
-   middle section) scrolls. Nothing here uses position:sticky — sticky elements are what caused
-   the bottom nav to vanish when this was added to the iPhone home screen: in that standalone
-   mode the browser's own viewport bookkeeping is unreliable, so a bar's position is pinned by
-   flex layout (it simply never has anywhere else to be) instead of by scroll tracking. */
+/* #app is the whole screen. #topbar and nav#tabs float as absolutely-positioned overlays
+   ON TOP of #view (which fills the full height behind them) rather than being flex siblings
+   that just push #view into the remaining space — that's what makes scrolled content visibly
+   continue, blurred, underneath them, the way iOS's own Réglages does it. #view's own
+   top/bottom padding (--topbar-h/--navbar-h, measured live by syncBarHeights() further down
+   the page) reserves just enough room that content starts out below/above the bars, same as
+   before, but can then scroll fully behind them.
+   Deliberately position:absolute, NOT position:sticky: sticky is what caused the bottom nav
+   to vanish entirely when this was tried before on the iPhone home screen — in standalone
+   mode the browser's own scroll-position bookkeeping for sticky is unreliable. Absolute
+   positioning here is anchored to #app's own box, which doesn't scroll and is already sized
+   from the JS-corrected --vvh (not the browser's live/buggy viewport figures), so it isn't
+   exposed to that same failure mode. */
 #app{
-  display:flex; flex-direction:column;
+  position:relative;
   height:100%;
   max-width:520px; width:100%; margin:0 auto;
 }
@@ -222,7 +230,11 @@ a{color:var(--accent);}
 @media (min-width: 700px){
   #app{ max-width:640px; }
 }
-#topbar{ flex:0 0 auto; padding:14px 0 8px; }
+#topbar{
+  position:absolute; top:0; left:0; right:0; z-index:2;
+  padding:14px 0 8px;
+  background:var(--ios27-sheet-bg); backdrop-filter:var(--ios27-sheet-blur); -webkit-backdrop-filter:var(--ios27-sheet-blur);
+}
 #topbar h1{font-size:21px; margin:0; color:var(--ink); display:flex; align-items:center; gap:9px;}
 #topbar h1 .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);display:inline-block; box-shadow:0 0 0 4px var(--accent-soft);}
 #resume-banner{
@@ -240,22 +252,25 @@ a{color:var(--accent);}
 }
 
 #view{
-  flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
-  overscroll-behavior:contain; padding-bottom:18px;
+  position:absolute; top:0; left:0; right:0; bottom:0;
+  overflow-y:auto; -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+  padding-top:var(--topbar-h, 64px);
+  padding-bottom:calc(var(--navbar-h, 84px) + var(--sessionbar-h, 0px) + 18px);
 }
 
 nav#tabs{
-  position:relative; overflow:hidden;
+  position:absolute; left:0; right:0; bottom:8px; z-index:2; overflow:hidden;
   /* WebKit doesn't always clip backdrop-filter's blur to border-radius on its own — without
      overflow:hidden here, whatever sits directly behind the bar can bleed through as a
      hard rectangular edge exactly at the rounded corners (confirmed on-device: a stat-tile's
      square corner showing through right at the pill's curve). box-shadow is unaffected by
      overflow:hidden on the element that casts it, so the outer drop shadow below still shows. */
-  flex:0 0 auto; display:flex; gap:2px;
+  display:flex; gap:2px;
   background:var(--ios27-tab-bg); backdrop-filter:var(--ios27-tab-blur); -webkit-backdrop-filter:var(--ios27-tab-blur);
   border:1px solid var(--ios27-tab-rim); border-radius:26px;
   box-shadow:var(--ios27-tab-shadow), inset 0 1px 0 var(--ios27-tab-hi), inset 0 -1px 0 var(--ios27-tab-lo);
-  padding:6px; margin:0 0 8px;
+  padding:6px;
 }
 /* The floating "glass pill" that slides under whichever tab is active — its own little
    raised capsule of Liquid Glass, tinted with the accent colour and catching light on top,
@@ -415,7 +430,10 @@ nav#tabs button.active svg{stroke:var(--accent);}
 .unit{font-size:10px; color:var(--ink-faint); flex-shrink:0; width:26px;}
 
 #session-bar{
-  flex:0 0 auto; margin:0 0 10px; padding:12px 16px; overflow:hidden;
+  position:absolute; left:0; right:0; bottom:calc(8px + var(--navbar-h, 84px) + 10px); z-index:2;
+  padding:12px 16px; overflow:hidden;
+  /* Its own height (rest-row present or not) feeds --sessionbar-h via syncBarHeights(), which
+     is what #view's padding-bottom reserves room for — see the comment on #app. */
   /* MOCKUP EXPERIMENT: the same measured iOS 27 "Regular Small" material as the tab bar,
      instead of the heavier hand-tuned --glass-* tokens — a floating toolbar is exactly
      what that material is specced for. */
@@ -563,7 +581,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b46";
+  var BUILD_VERSION = "b47";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -1072,6 +1090,28 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   }
   window.addEventListener("resize", moveTabHighlight);
 
+  // #topbar, nav#tabs and #session-bar float as absolute overlays (see the comment on #app)
+  // instead of flex siblings that push #view around — so #view has to be told how much room
+  // to reserve at each end itself, via these three custom properties, or content would start
+  // out hidden underneath the bars instead of just scrolling behind them later. Their real
+  // heights vary (a long workout name wraps to two lines, the resume banner shows or not, a
+  // session bar's rest-row exists or not) so this measures the actual rendered boxes rather
+  // than guessing a fixed number. Called after every render()/renderSessionBar(), on resize,
+  // and — as a safety net for anything that reflows without going through either of those,
+  // e.g. a system font substitution — via ResizeObserver.
+  function syncBarHeights(){
+    var topbar = document.getElementById("topbar"), sbar = document.getElementById("session-bar");
+    var root = document.documentElement;
+    root.style.setProperty("--topbar-h", topbar.offsetHeight + "px");
+    root.style.setProperty("--navbar-h", $tabs.offsetHeight + "px");
+    root.style.setProperty("--sessionbar-h", sbar ? (sbar.offsetHeight + 10) + "px" : "0px");
+  }
+  window.addEventListener("resize", syncBarHeights);
+  if(window.ResizeObserver){
+    new ResizeObserver(syncBarHeights).observe(document.getElementById("topbar"));
+    new ResizeObserver(syncBarHeights).observe($tabs);
+  }
+
   function render(){
     if(!state.activeSession){
       var leftoverBar = document.getElementById("session-bar");
@@ -1098,6 +1138,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     // to the shared cloud doc on every navigation — harmless but wasteful, and it would
     // blur syncVersion's actual meaning (see save()/checkCloudForUpdates).
     persistLocally();
+    syncBarHeights();
   }
 
   // ---------- HOME ----------
