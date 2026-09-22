@@ -195,6 +195,17 @@ a{color:var(--accent);}
   height:100%;
   max-width:520px; width:100%; margin:0 auto;
 }
+/* iPad (and any wider viewport, e.g. a resized iPadOS Split View window): the same
+   phone-first layout just centered with a moderately wider column instead of a narrow
+   strip lost in a sea of side padding. Deliberately NOT restructuring the grids (workout
+   tiles, person columns, stat tiles...) into more columns here — the "last odd tile spans
+   full width" logic in renderHome() assumes a 2-column grid, so widening the container is
+   the low-risk way to use the extra space without having to touch that logic too. Split
+   View/Slide Over at narrower widths than this simply falls back to the phone layout above,
+   which is exactly the right behavior already. */
+@media (min-width: 700px){
+  #app{ max-width:640px; }
+}
 #topbar{ flex:0 0 auto; padding:14px 0 8px; }
 #topbar h1{font-size:21px; margin:0; color:var(--ink); display:flex; align-items:center; gap:9px;}
 #topbar h1 .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);display:inline-block; box-shadow:0 0 0 4px var(--accent-soft);}
@@ -523,7 +534,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b38";
+  var BUILD_VERSION = "b39";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -1815,6 +1826,10 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     '</div>';
 
     state.workouts.forEach(function(w){
+      // A video course has no exercise list to edit here — the settings accordion for
+      // adding/editing exercises would just be a dead end (renderSession() never surfaces
+      // them for a video workout), so skip it rather than show an editor that does nothing.
+      if(w.type === "video") return;
       html += '<div class="card stack" data-workout="' + w.id + '">' +
         '<button class="workout-toggle" data-toggle-workout="' + w.id + '" type="button">' +
           '<h3>' + w.name + '</h3>' +
