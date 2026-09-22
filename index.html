@@ -507,7 +507,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b32";
+  var BUILD_VERSION = "b33";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -580,6 +580,11 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       activeSession: null,
       lastBackupAt: null,
       lastCloudSyncAt: null,
+      // Simple logical clock (wall-clock ms) bumped on every real local edit, stored
+      // alongside the data pushed to the shared cloud doc — this is how a device knows
+      // whether what it just pulled is actually newer than what it already has, across
+      // several iPhones sharing the same backup (see adoptRemoteState/checkCloudForUpdates).
+      syncVersion: 0,
       sessions: [],
       workouts: [
         { id:"haut", name:"Haut du corps", met:5.3, location:"salle", exercises:[
@@ -690,7 +695,13 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       return parsed;
     }catch(e){ return defaultState(); }
   }
-  function save(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){} scheduleCloudSync(); }
+  // Every real local edit bumps syncVersion — this is the logical clock that lets another
+  // iPhone tell "is what I just pulled actually newer than what I already have" (see
+  // checkCloudForUpdates below). Adopting a remote pull is NOT a local edit, so it goes
+  // through persistLocally() directly instead of save(), to avoid re-stamping the version
+  // (and re-pushing straight back up what we only just pulled down).
+  function save(){ state.syncVersion = Date.now(); persistLocally(); scheduleCloudSync(); }
+  function persistLocally(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){} }
 
   // Debounced so a burst of stepper taps doesn't fire a write per tap — the cloud module
   // (loaded further down the page) may not be ready yet on the very first save() of a
@@ -702,11 +713,36 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     cloudSyncTimer = setTimeout(function(){
       window.__cloudSync.save(state).then(function(){
         state.lastCloudSyncAt = new Date().toISOString();
-        try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+        persistLocally();
         var el = document.getElementById("cloud-sync-status");
         if(el) el.textContent = "Sauvegarde cloud : " + fmtBackupAge(state.lastCloudSyncAt);
       }).catch(function(err){ console.warn("cloud sync failed", err); });
     }, 1500);
+  }
+
+  // Adopts a full state object fetched from the shared cloud doc (pulled automatically from
+  // another device, or via the manual "Restaurer" button) — never called for our own edits,
+  // so it deliberately does NOT go through save() (that would re-stamp syncVersion with
+  // Date.now() and immediately push the exact thing we just pulled straight back up).
+  function adoptRemoteState(remote){
+    state = ensureBodyProfiles(migrateContent(remote));
+    persistLocally();
+  }
+
+  // Runs on load and whenever the app comes back to the foreground (another iPhone may have
+  // pushed a session in the meantime) — pulls the shared doc and adopts it only if its
+  // syncVersion is actually ahead of what's already here. Skipped mid-workout so a pull
+  // racing an in-progress set can't yank the screen out from under you; the next natural
+  // check (leaving the session, or reopening later) catches up instead.
+  function checkCloudForUpdates(){
+    if(!window.__cloudSync || state.activeSession) return;
+    window.__cloudSync.restore().then(function(remote){
+      if(!remote) return;
+      if((remote.syncVersion||0) > (state.syncVersion||0)){
+        adoptRemoteState(remote);
+        applyTheme(); render();
+      }
+    }).catch(function(err){ console.warn("cloud pull failed", err); });
   }
 
   var ACCENT_THEMES = {
@@ -917,7 +953,12 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     else if(tab==="history") renderHistory();
     else if(tab==="progress") renderProgress();
     else if(tab==="settings") renderSettings();
-    save();
+    // Local-only: just remembers which tab you're on across a relaunch. Using the
+    // version-bumping save() here instead would count every tab switch (and every
+    // adopted cloud pull, which also ends in a render()) as a "real edit" and re-push
+    // to the shared cloud doc on every navigation — harmless but wasteful, and it would
+    // blur syncVersion's actual meaning (see save()/checkCloudForUpdates).
+    persistLocally();
   }
 
   // ---------- HOME ----------
@@ -1685,12 +1726,12 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     document.getElementById("export-btn").addEventListener("click", exportData);
     document.getElementById("import-btn").addEventListener("click", function(){ document.getElementById("import-input").click(); });
     document.getElementById("cloud-restore-btn").addEventListener("click", function(){
-      showConfirm("Restaurer depuis le cloud", "Remplace toutes les données de cet appareil par la dernière sauvegarde cloud. Continuer ?", "Restaurer", function(){
+      showConfirm("Restaurer depuis le cloud", "Remplace toutes les données de cet appareil par la dernière sauvegarde cloud partagée. Continuer ?", "Restaurer", function(){
         if(!window.__cloudSync){ showAlert("La connexion au cloud n'est pas prête, réessaie dans un instant."); return; }
         window.__cloudSync.restore().then(function(remote){
-          if(!remote){ showAlert("Aucune sauvegarde cloud trouvée pour cet appareil."); return; }
-          state = ensureBodyProfiles(migrateContent(remote));
-          applyTheme(); save(); render();
+          if(!remote){ showAlert("Aucune sauvegarde cloud trouvée."); return; }
+          adoptRemoteState(remote);
+          applyTheme(); render();
         }).catch(function(){ showAlert("Impossible de contacter le cloud pour le moment — vérifie ta connexion internet."); });
       }, true);
     });
@@ -1762,6 +1803,12 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     window.claude.hot.ready ? window.claude.hot.ready(boot) : boot();
   } else { boot(); }
 
+  // Pulls whatever another of your iPhones may have pushed since this device last looked —
+  // on load (module is generally ready by then, see the comment on window.__cloudSync
+  // further down) and every time the app comes back to the foreground.
+  window.addEventListener("load", function(){ checkCloudForUpdates(); });
+  document.addEventListener("visibilitychange", function(){ if(!document.hidden) checkCloudForUpdates(); });
+
   // Auto-update: without this, a new deploy never reaches the phone until you delete
   // the app from the home screen and clear site data — the OS only re-checks for a new
   // service-worker.js on its own schedule, which in practice is unreliable for a
@@ -1797,12 +1844,15 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
 </script>
 
 <script type="module">
-  // Silent cloud backup: mirrors the same JSON export() already produces up to Firestore,
-  // so a lost/wiped phone can be recovered without ever having remembered to hit "Exporter".
-  // Keyed by an anonymous auth uid (persisted by Firebase in this browser's storage) rather
-  // than anything guessable, since this file — and the Firebase config in it — is public in
-  // the GitHub repo; Firestore's security rules (not the config) are what keep this private,
-  // by only letting a uid read/write its own document.
+  // Shared cloud backup: mirrors the same JSON export() already produces up to Firestore,
+  // under ONE fixed document shared by every iPhone running this app (SHARED_DOC_ID below) —
+  // that's what lets a session logged on iPhone 1 on Monday show up in the history on
+  // iPhone 2 on Tuesday (see checkCloudForUpdates in the main script). Anonymous auth is
+  // still used (each device signs itself in) purely so Firestore's rules can require
+  // request.auth != null; it's no longer part of the document path. Since this file — and
+  // the Firebase config and SHARED_DOC_ID in it — are public in the GitHub repo, the real
+  // security boundary is the Firestore rule restricting reads/writes to exactly this one
+  // document id, not the id being secret.
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
   import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, doc, setDoc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
@@ -1815,6 +1865,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     messagingSenderId: "992408391096",
     appId: "1:992408391096:web:5fac245f218b2e7480934d"
   };
+  var SHARED_DOC_ID = "d31a77a5-baf0-4bb1-a3e3-845de0de61cc";
 
   var app = initializeApp(firebaseConfig);
   var auth = getAuth(app);
@@ -1822,20 +1873,21 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // IndexedDB and go out on its own once the phone has a connection again, with no retry
   // logic of our own needed — the SDK handles that.
   var db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }) });
+  var sharedDoc = doc(db, "backups", SHARED_DOC_ID);
 
-  var uidReady = new Promise(function(resolve){
-    onAuthStateChanged(auth, function(user){ if(user) resolve(user.uid); });
+  var authReady = new Promise(function(resolve){
+    onAuthStateChanged(auth, function(user){ if(user) resolve(); });
     signInAnonymously(auth).catch(function(err){ console.warn("cloud auth failed", err); });
   });
 
   window.__cloudSync = {
     save: function(stateObj){
-      return uidReady.then(function(uid){
-        return setDoc(doc(db, "backups", uid), { json: JSON.stringify(stateObj), updatedAt: serverTimestamp() });
+      return authReady.then(function(){
+        return setDoc(sharedDoc, { json: JSON.stringify(stateObj), updatedAt: serverTimestamp() });
       });
     },
     restore: function(){
-      return uidReady.then(function(uid){ return getDoc(doc(db, "backups", uid)); }).then(function(snap){
+      return authReady.then(function(){ return getDoc(sharedDoc); }).then(function(snap){
         if(!snap.exists()) return null;
         try{ return JSON.parse(snap.data().json); }catch(e){ return null; }
       });
