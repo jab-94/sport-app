@@ -507,7 +507,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b31";
+  var BUILD_VERSION = "b32";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -579,6 +579,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       currentPerson: "p1",
       activeSession: null,
       lastBackupAt: null,
+      lastCloudSyncAt: null,
       sessions: [],
       workouts: [
         { id:"haut", name:"Haut du corps", met:5.3, location:"salle", exercises:[
@@ -689,7 +690,24 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       return parsed;
     }catch(e){ return defaultState(); }
   }
-  function save(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){} }
+  function save(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){} scheduleCloudSync(); }
+
+  // Debounced so a burst of stepper taps doesn't fire a write per tap — the cloud module
+  // (loaded further down the page) may not be ready yet on the very first save() of a
+  // session, hence the guard; scheduleCloudSync() just gets called again on the next save().
+  var cloudSyncTimer = null;
+  function scheduleCloudSync(){
+    if(!window.__cloudSync) return;
+    clearTimeout(cloudSyncTimer);
+    cloudSyncTimer = setTimeout(function(){
+      window.__cloudSync.save(state).then(function(){
+        state.lastCloudSyncAt = new Date().toISOString();
+        try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+        var el = document.getElementById("cloud-sync-status");
+        if(el) el.textContent = "Sauvegarde cloud : " + fmtBackupAge(state.lastCloudSyncAt);
+      }).catch(function(err){ console.warn("cloud sync failed", err); });
+    }, 1500);
+  }
 
   var ACCENT_THEMES = {
     orange: { label:"Orange", accent:"#ff5a33", ink:"#1a0f06" },
@@ -1565,7 +1583,9 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       '<div class="faint">Les données ne vivent que sur cet appareil (mémoire de Safari) — aucun cloud automatique. Exporte de temps en temps pour ne rien perdre en cas de suppression accidentelle.</div>' +
       '<div class="row" style="gap:10px;"><button class="btn btn-line" id="export-btn" style="flex:1;">Exporter</button>' +
       '<button class="btn btn-line" id="import-btn" style="flex:1;">Importer</button></div>' +
-      '<div class="faint">Dernière sauvegarde : ' + fmtBackupAge(state.lastBackupAt) + '</div>' +
+      '<div class="faint">Dernière sauvegarde manuelle : ' + fmtBackupAge(state.lastBackupAt) + '</div>' +
+      '<div class="faint" id="cloud-sync-status">Sauvegarde cloud : ' + fmtBackupAge(state.lastCloudSyncAt) + '</div>' +
+      '<button class="btn btn-line" id="cloud-restore-btn">Restaurer depuis le cloud</button>' +
       '<button class="btn btn-line" id="reset-btn" style="color:var(--accent); border-color:var(--accent);">Réinitialiser toutes les données</button></div>';
     html += '</div>';
     $view.innerHTML = html;
@@ -1664,6 +1684,16 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     });
     document.getElementById("export-btn").addEventListener("click", exportData);
     document.getElementById("import-btn").addEventListener("click", function(){ document.getElementById("import-input").click(); });
+    document.getElementById("cloud-restore-btn").addEventListener("click", function(){
+      showConfirm("Restaurer depuis le cloud", "Remplace toutes les données de cet appareil par la dernière sauvegarde cloud. Continuer ?", "Restaurer", function(){
+        if(!window.__cloudSync){ showAlert("La connexion au cloud n'est pas prête, réessaie dans un instant."); return; }
+        window.__cloudSync.restore().then(function(remote){
+          if(!remote){ showAlert("Aucune sauvegarde cloud trouvée pour cet appareil."); return; }
+          state = ensureBodyProfiles(migrateContent(remote));
+          applyTheme(); save(); render();
+        }).catch(function(){ showAlert("Impossible de contacter le cloud pour le moment — vérifie ta connexion internet."); });
+      }, true);
+    });
     document.getElementById("reset-btn").addEventListener("click", function(){
       showConfirm("Tout réinitialiser ?", "Toutes les séances enregistrées seront perdues et les exercices reviendront à leurs valeurs par défaut.", "Réinitialiser", function(){
         state = defaultState(); applyTheme(); save(); render();
@@ -1764,6 +1794,53 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     });
   }
 })();
+</script>
+
+<script type="module">
+  // Silent cloud backup: mirrors the same JSON export() already produces up to Firestore,
+  // so a lost/wiped phone can be recovered without ever having remembered to hit "Exporter".
+  // Keyed by an anonymous auth uid (persisted by Firebase in this browser's storage) rather
+  // than anything guessable, since this file — and the Firebase config in it — is public in
+  // the GitHub repo; Firestore's security rules (not the config) are what keep this private,
+  // by only letting a uid read/write its own document.
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, doc, setDoc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+  var firebaseConfig = {
+    apiKey: "AIzaSyBgjzTjhPxx5GBUFavZ_rR0aZ1QdpnmPm4",
+    authDomain: "sport-app-debe7.firebaseapp.com",
+    projectId: "sport-app-debe7",
+    storageBucket: "sport-app-debe7.firebasestorage.app",
+    messagingSenderId: "992408391096",
+    appId: "1:992408391096:web:5fac245f218b2e7480934d"
+  };
+
+  var app = initializeApp(firebaseConfig);
+  var auth = getAuth(app);
+  // persistentLocalCache is what lets a write made with no signal at the gym sit queued in
+  // IndexedDB and go out on its own once the phone has a connection again, with no retry
+  // logic of our own needed — the SDK handles that.
+  var db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }) });
+
+  var uidReady = new Promise(function(resolve){
+    onAuthStateChanged(auth, function(user){ if(user) resolve(user.uid); });
+    signInAnonymously(auth).catch(function(err){ console.warn("cloud auth failed", err); });
+  });
+
+  window.__cloudSync = {
+    save: function(stateObj){
+      return uidReady.then(function(uid){
+        return setDoc(doc(db, "backups", uid), { json: JSON.stringify(stateObj), updatedAt: serverTimestamp() });
+      });
+    },
+    restore: function(){
+      return uidReady.then(function(uid){ return getDoc(doc(db, "backups", uid)); }).then(function(snap){
+        if(!snap.exists()) return null;
+        try{ return JSON.parse(snap.data().json); }catch(e){ return null; }
+      });
+    }
+  };
 </script>
 
 </body>
