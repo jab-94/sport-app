@@ -541,11 +541,11 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
 (function(){
   "use strict";
   var STORAGE_KEY = "carnet-fonte-v2";
-  var CONTENT_VERSION = 9; // bump this whenever the built-in exercise data below changes
+  var CONTENT_VERSION = 10; // bump this whenever the built-in exercise data below changes
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b40";
+  var BUILD_VERSION = "b41";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -686,8 +686,13 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         // type==="video" to show a single player instead of exercise cards, and finishSession()
         // already handles an empty progress[] fine on its own (0 volume, no PRs, just duration
         // × met × weight for calories, same formula as every other workout).
+        // Embedded via YouTube's own player (youtube-nocookie.com) rather than a locally
+        // hosted file — full source quality with no re-encoding on our side, streamed
+        // directly, so it needs a connection each time (fine for a "maison" workout) and
+        // isn't precached by the service worker (a cross-origin iframe's own requests
+        // aren't intercepted by our SW anyway, so there was nothing to configure there).
         { id:"cours-abdo", name:"Cours focus abdo", met:4.0, location:"maison", type:"video",
-          videoFile:"cours-focus-abdo.mp4", videoDurationMin:10, exercises:[] },
+          videoId:"WuRpt7G1vrk", videoDurationMin:10, exercises:[] },
       ]
     };
   }
@@ -709,6 +714,16 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       // whole list wholesale instead of merging id-by-id.
       if(fw.id === "abdo"){
         sw.exercises = fw.exercises.map(function(fe){ return JSON.parse(JSON.stringify(fe)); });
+        return;
+      }
+      // Cours focus abdo switched from a locally hosted file (videoFile) to an embedded
+      // YouTube player (videoId) for better quality — the generic per-field copy above
+      // doesn't touch type/videoId/videoDurationMin, so anyone who already has this
+      // workout saved from before needs them refreshed explicitly, and the stale field
+      // dropped.
+      if(fw.id === "cours-abdo"){
+        sw.type = fw.type; sw.videoId = fw.videoId; sw.videoDurationMin = fw.videoDurationMin;
+        delete sw.videoFile;
         return;
       }
       fw.exercises.forEach(function(fe){
@@ -1223,8 +1238,9 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         '<div class="row between"><h2 style="margin:0;">' + w.name + '</h2>' +
         '<button class="btn btn-line btn-sm" id="cancel-session-btn">Annuler</button></div>' +
         '<div class="card" style="padding:0; overflow:hidden;">' +
-          '<video src="videos/' + escapeAttr(w.videoFile) + '" controls playsinline preload="metadata" ' +
-            'style="width:100%; display:block; background:#000;"></video>' +
+          '<iframe src="https://www.youtube-nocookie.com/embed/' + escapeAttr(w.videoId) + '?playsinline=1&rel=0" title="' + escapeAttr(w.name) + '" ' +
+            'style="width:100%; aspect-ratio:16/9; display:block; background:#000; border:0;" ' +
+            'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>' +
         '</div>' +
         '<div class="faint" style="text-align:center;">Appuie sur "Cours terminé" en bas une fois la vidéo finie.</div>' +
       '</div>';
