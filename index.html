@@ -54,6 +54,12 @@
   document.addEventListener("visibilitychange", function(){ if(!document.hidden) onResume(); });
   window.addEventListener("pageshow", onResume);
   window.addEventListener("focus", onResume);
+  // Exposed so the app script (further down the page) can trigger the same fix after closing
+  // the exercise-video modal — playing an inline <video> and dismissing it leaves WKWebView's
+  // scroll engine in the exact same "stuck" state as a lock/unlock, but that doesn't fire
+  // visibilitychange/pageshow/focus (the page was never actually backgrounded), so nothing
+  // above would otherwise catch it.
+  window.__kickScrollAfterOverlay = onResume;
   setVVH();
   window.addEventListener("resize", setVVH);
   window.addEventListener("orientationchange", setVVH);
@@ -501,7 +507,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b28";
+  var BUILD_VERSION = "b29";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -786,6 +792,22 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     el.addEventListener("contextmenu", function(ev){ ev.preventDefault(); });
   }
 
+  // Closes the shared overlay/sheet. Centralised because the exercise-info sheet can contain
+  // a playing <video> — pausing it here (instead of leaving it to keep decoding off-screen)
+  // and re-running the same lock/unlock scroll fix as onResume() (see the head script) is
+  // what stops the session view's scroll from getting stuck right after you back out of a
+  // video: WKWebView leaves its momentum-scroll engine sluggish on whichever container was
+  // "active" the same way it does after the phone locks, but closing an in-page modal never
+  // fires visibilitychange/pageshow/focus, so nothing else would catch it.
+  function closeOverlay(overlay, sheet){
+    overlay.classList.remove("show");
+    if(sheet){
+      var vid = sheet.querySelector("video");
+      if(vid){ try{ vid.pause(); }catch(e){} }
+    }
+    if(window.__kickScrollAfterOverlay) window.__kickScrollAfterOverlay();
+  }
+
   // Native confirm()/alert() dialogs are unreliable inside a sandboxed page like this one, so every
   // "are you sure?" and every message in this app uses this in-page sheet instead of the browser's.
   function showConfirm(title, message, confirmLabel, onYes, danger){
@@ -797,8 +819,8 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         '<button class="btn ' + (danger?"btn-danger":"btn-accent") + ' btn-block" id="confirm-yes">' + escapeAttr(confirmLabel) + '</button>' +
       '</div>';
     overlay.classList.add("show");
-    document.getElementById("confirm-no").addEventListener("click", function(){ overlay.classList.remove("show"); });
-    document.getElementById("confirm-yes").addEventListener("click", function(){ overlay.classList.remove("show"); onYes(); });
+    document.getElementById("confirm-no").addEventListener("click", function(){ closeOverlay(overlay, sheet); });
+    document.getElementById("confirm-yes").addEventListener("click", function(){ closeOverlay(overlay, sheet); onYes(); });
   }
   function showInfo(title, text, videoClip){
     var overlay = document.getElementById("summary-overlay"), sheet = document.getElementById("summary-sheet");
@@ -813,14 +835,14 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       (text ? '<div class="muted" style="margin-bottom:18px; line-height:1.5;">' + escapeAttr(text) + '</div>' : '') +
       '<button class="btn btn-accent btn-block" id="info-ok">Compris</button>';
     overlay.classList.add("show");
-    document.getElementById("info-ok").addEventListener("click", function(){ overlay.classList.remove("show"); });
+    document.getElementById("info-ok").addEventListener("click", function(){ closeOverlay(overlay, sheet); });
   }
   function showAlert(message){
     var overlay = document.getElementById("summary-overlay"), sheet = document.getElementById("summary-sheet");
     sheet.innerHTML = '<div class="muted" style="margin-bottom:18px;">' + escapeAttr(message) + '</div>' +
       '<button class="btn btn-accent btn-block" id="alert-ok">OK</button>';
     overlay.classList.add("show");
-    document.getElementById("alert-ok").addEventListener("click", function(){ overlay.classList.remove("show"); });
+    document.getElementById("alert-ok").addEventListener("click", function(){ closeOverlay(overlay, sheet); });
   }
 
   var $view = document.getElementById("view");
@@ -831,7 +853,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Tapping the dimmed backdrop (not the sheet itself) closes any open modal without taking
   // its action — same as picking "Non" on a confirm, or just deciding not to start after all.
   document.getElementById("summary-overlay").addEventListener("click", function(e){
-    if(e.target === this){ this.classList.remove("show"); render(); }
+    if(e.target === this){ closeOverlay(this, document.getElementById("summary-sheet")); render(); }
   });
 
   document.getElementById("resume-btn").addEventListener("click", function(){ state.currentTab="session"; render(); });
@@ -939,7 +961,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     document.getElementById("start-confirm").addEventListener("click", function(){
       var checked = Array.prototype.slice.call(sheet.querySelectorAll(".participant-check:checked")).map(function(c){ return c.getAttribute("data-pid"); });
       if(!checked.length){ showAlert("Sélectionne au moins une personne."); return; }
-      overlay.classList.remove("show");
+      closeOverlay(overlay, sheet);
       startSession(workoutId, checked);
     });
   }
@@ -1002,7 +1024,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         '<button class="btn btn-accent btn-block" id="adhoc-confirm">Ajouter</button>' +
       '</div>';
     overlay.classList.add("show");
-    document.getElementById("adhoc-cancel").addEventListener("click", function(){ overlay.classList.remove("show"); });
+    document.getElementById("adhoc-cancel").addEventListener("click", function(){ closeOverlay(overlay, sheet); });
     document.getElementById("adhoc-confirm").addEventListener("click", function(){
       var name = document.getElementById("adhoc-name").value.trim();
       if(!name){ showAlert("Donne un nom à l’exercice."); return; }
@@ -1010,7 +1032,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       var trackWeight = document.getElementById("adhoc-trackweight").checked;
       var chosen = Array.prototype.slice.call(document.querySelectorAll(".adhoc-participant:checked")).map(function(c){ return c.value; });
       if(chosen.length===0){ showAlert("Choisis au moins une personne."); return; }
-      overlay.classList.remove("show");
+      closeOverlay(overlay, sheet);
       addAdhocExercise(name, machine, trackWeight, chosen);
     });
   }
@@ -1274,7 +1296,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     html += '<button class="btn btn-accent btn-block" style="margin-top:16px;" id="summary-close">Fermer</button>';
     sheet.innerHTML = html;
     overlay.classList.add("show");
-    document.getElementById("summary-close").addEventListener("click", function(){ overlay.classList.remove("show"); render(); });
+    document.getElementById("summary-close").addEventListener("click", function(){ closeOverlay(overlay, sheet); render(); });
   }
   function stat(v,l){ return '<div class="stat-tile"><div class="v">' + v + '</div><div class="l">' + l + '</div></div>'; }
 
