@@ -541,11 +541,11 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
 (function(){
   "use strict";
   var STORAGE_KEY = "carnet-fonte-v2";
-  var CONTENT_VERSION = 11; // bump this whenever the built-in exercise data below changes
+  var CONTENT_VERSION = 12; // bump this whenever the built-in exercise data below changes
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b42";
+  var BUILD_VERSION = "b43";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -698,7 +698,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         // is fine to serve as-is. renderSession() branches on videoId vs videoFile to pick
         // the iframe or a plain <video>.
         { id:"cours-fessiers", name:"Cours focus fessiers", met:4.5, location:"maison", type:"video",
-          videoFile:"cours-focus-fessiers.mp4", videoDurationMin:10, exercises:[] },
+          videoId:"6hOAGDbkLOw", videoDurationMin:10, exercises:[] },
       ]
     };
   }
@@ -722,14 +722,15 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         sw.exercises = fw.exercises.map(function(fe){ return JSON.parse(JSON.stringify(fe)); });
         return;
       }
-      // Cours focus abdo switched from a locally hosted file (videoFile) to an embedded
-      // YouTube player (videoId) for better quality — the generic per-field copy above
-      // doesn't touch type/videoId/videoDurationMin, so anyone who already has this
-      // workout saved from before needs them refreshed explicitly, and the stale field
-      // dropped.
-      if(fw.id === "cours-abdo"){
-        sw.type = fw.type; sw.videoId = fw.videoId; sw.videoDurationMin = fw.videoDurationMin;
-        delete sw.videoFile;
+      // A video course's player can switch source (local file <-> YouTube embed, e.g. for
+      // better quality) — the generic per-field copy above doesn't touch
+      // type/videoId/videoFile/videoDurationMin, so refresh them explicitly and drop
+      // whichever of videoId/videoFile the fresh definition no longer sets.
+      if(fw.type === "video"){
+        sw.type = fw.type; sw.videoDurationMin = fw.videoDurationMin;
+        sw.videoId = fw.videoId; sw.videoFile = fw.videoFile;
+        if(!fw.videoId) delete sw.videoId;
+        if(!fw.videoFile) delete sw.videoFile;
         return;
       }
       fw.exercises.forEach(function(fe){
