@@ -1,6 +1,6 @@
 // Bump this any time you replace the app's files so phones pick up the update
 // instead of serving a stale cached copy forever.
-const CACHE_VERSION = "sport-v30";
+const CACHE_VERSION = "sport-v31";
 const APP_SHELL = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png",
   "./videos/abdo-kneetuck.mp4", "./videos/abdo-scissors.mp4", "./videos/abdo-vup.mp4", "./videos/abdo-twist.mp4",
   "./videos/abdo-bicycle.mp4", "./videos/abdo-jackknife.mp4", "./videos/abdo-pikewalk.mp4", "./videos/abdo-walkout.mp4",
@@ -32,7 +32,11 @@ self.addEventListener("fetch", (event) => {
   // when you have signal), fall back to the cached copy the moment you don't.
   if (req.mode === "navigate" || url.pathname.endsWith("/index.html")) {
     event.respondWith(
-      fetch(req)
+      // no-store here matters: without it, the browser's own HTTP cache (a layer
+      // below the Cache Storage API, which this fetch() doesn't otherwise touch)
+      // can still hand back a stale index.html even though we're "trying the
+      // network first" — this is what forced a full site-data wipe to see updates.
+      fetch(req, { cache: "no-store" })
         .then((res) => {
           const copy = res.clone();
           caches.open(CACHE_VERSION).then((c) => c.put(req, copy));

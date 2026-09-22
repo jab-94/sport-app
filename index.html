@@ -507,7 +507,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b30";
+  var BUILD_VERSION = "b31";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -1732,9 +1732,35 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     window.claude.hot.ready ? window.claude.hot.ready(boot) : boot();
   } else { boot(); }
 
+  // Auto-update: without this, a new deploy never reaches the phone until you delete
+  // the app from the home screen and clear site data — the OS only re-checks for a new
+  // service-worker.js on its own schedule, which in practice is unreliable for a
+  // standalone PWA. Forcing a check on every launch/resume (visibilitychange, which the
+  // scroll-fix code at the top of <head> already hooks for the same "just reopened the
+  // app" moment) and reloading as soon as the new one takes over means a fresh deploy
+  // shows up just by reopening the app, no manual reset needed.
   if("serviceWorker" in navigator){
     window.addEventListener("load", function(){
-      navigator.serviceWorker.register("service-worker.js").catch(function(){});
+      navigator.serviceWorker.register("service-worker.js", { updateViaCache: "none" }).then(function(reg){
+        reg.update().catch(function(){});
+        document.addEventListener("visibilitychange", function(){
+          if(!document.hidden) reg.update().catch(function(){});
+        });
+      }).catch(function(){});
+    });
+    var reloadingForUpdate = false;
+    navigator.serviceWorker.addEventListener("controllerchange", function(){
+      if(reloadingForUpdate) return;
+      reloadingForUpdate = true;
+      // Mid-workout, force-reloading would cut you off in the middle of a set — ask
+      // first (your data is already saved on every change, so nothing is lost either
+      // way, but the interruption itself is worth a heads-up). Otherwise just refresh.
+      if(state.activeSession){
+        showConfirm("Nouvelle version", "Une mise à jour de l'app est prête. Actualiser maintenant ?", "Actualiser", function(){ window.location.reload(); });
+        reloadingForUpdate = false;
+      } else {
+        window.location.reload();
+      }
     });
   }
 })();
