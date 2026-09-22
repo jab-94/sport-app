@@ -507,7 +507,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b29";
+  var BUILD_VERSION = "b30";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -1497,8 +1497,12 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       '<div class="faint">' + escapeAttr((ACCENT_THEMES[state.theme||"orange"]).label) + ' — change ta couleur quand l’humeur te prend.</div>' +
     '</div>';
 
-    html += '<div class="card stack">' +
-      '<div class="section-title">Vous deux</div>' +
+    html += '<div class="card stack" data-workout="vousdeux">' +
+      '<button class="workout-toggle" data-toggle-workout="vousdeux" type="button">' +
+        '<h3>Vous deux</h3>' +
+        '<span class="chevron"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>' +
+      '</button>' +
+      '<div class="stack" data-ex-list' + (settingsOpen["vousdeux"] ? '' : ' hidden') + '>' +
       state.people.map(function(pl){
         var pr = state.bodyProfiles[pl.id] || {};
         return '<div class="profile-block ' + (pl.id==="p2"?"p2":"") + '">' +
@@ -1528,6 +1532,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         '</div>';
       }).join("") +
       '<div class="faint">Le poids sert à estimer les calories dépensées pendant les séances. Taille + âge + sexe + activité donnent les calories & protéines à viser chaque jour (visible dans Progrès).</div>' +
+      '</div>' +
     '</div>';
 
     state.workouts.forEach(function(w){
