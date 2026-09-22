@@ -136,6 +136,11 @@
   --ios27-tab-hi: rgba(230,230,230,.5);
   --ios27-tab-lo: rgba(26,26,26,.4);
   --ios27-tab-shadow: 0 8px 20px rgba(0,0,0,.35), 0 1px 0 rgba(0,0,0,.3);
+  /* MOCKUP EXPERIMENT: same material family, "Regular" size (a full sheet, not a compact
+     control) — a bit more tint and blur than the tab bar's "Small" variant, which is what
+     the real material spec calls for at this size, so text over varied content stays readable. */
+  --ios27-sheet-bg: rgba(118,118,128,.20);
+  --ios27-sheet-blur: blur(24px) saturate(180%);
 }
 *{box-sizing:border-box}
 /* The claude.ai artifact preview silently injects this reset for us; a plain self-hosted
@@ -405,8 +410,12 @@ nav#tabs button.active svg{stroke:var(--accent);}
 
 #session-bar{
   flex:0 0 auto; margin:0 0 10px; padding:12px 16px;
-  background:var(--glass-bg-strong); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
-  border:1px solid var(--glass-border); border-radius:20px; box-shadow:var(--shadow), inset 0 1px 0 var(--glass-hi);
+  /* MOCKUP EXPERIMENT: the same measured iOS 27 "Regular Small" material as the tab bar,
+     instead of the heavier hand-tuned --glass-* tokens — a floating toolbar is exactly
+     what that material is specced for. */
+  background:var(--ios27-tab-bg); backdrop-filter:var(--ios27-tab-blur); -webkit-backdrop-filter:var(--ios27-tab-blur);
+  border:1px solid var(--ios27-tab-rim); border-radius:20px;
+  box-shadow:var(--ios27-tab-shadow), inset 0 1px 0 var(--ios27-tab-hi), inset 0 -6px 10px -6px var(--ios27-tab-lo);
   display:flex; flex-direction:column; gap:10px;
 }
 #session-bar .prog{font-size:12.5px; color:var(--ink-soft); flex-shrink:0;}
@@ -480,9 +489,10 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
 }
 .overlay.show{opacity:1; pointer-events:auto;}
 .sheet{
-  background:var(--glass-bg-strong); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
-  border:1px solid var(--glass-border); border-radius:24px; padding:22px 18px; max-width:480px; width:100%;
-  box-shadow:var(--shadow), inset 0 1px 0 var(--glass-hi); max-height:85vh; overflow-y:auto;
+  background:var(--ios27-sheet-bg); backdrop-filter:var(--ios27-sheet-blur); -webkit-backdrop-filter:var(--ios27-sheet-blur);
+  border:1px solid var(--ios27-tab-rim); border-radius:24px; padding:22px 18px; max-width:480px; width:100%;
+  box-shadow:var(--ios27-tab-shadow), inset 0 1px 0 var(--ios27-tab-hi), inset 0 -6px 10px -6px var(--ios27-tab-lo);
+  max-height:85vh; overflow-y:auto;
   transform:translateY(28px) scale(.97); opacity:0; transition:transform .3s cubic-bezier(.2,.9,.25,1.1), opacity .25s ease;
 }
 .overlay.show .sheet{ transform:translateY(0) scale(1); opacity:1; }
@@ -545,7 +555,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b43";
+  var BUILD_VERSION = "b44";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
