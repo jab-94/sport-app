@@ -541,11 +541,11 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
 (function(){
   "use strict";
   var STORAGE_KEY = "carnet-fonte-v2";
-  var CONTENT_VERSION = 10; // bump this whenever the built-in exercise data below changes
+  var CONTENT_VERSION = 11; // bump this whenever the built-in exercise data below changes
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b41";
+  var BUILD_VERSION = "b42";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -693,6 +693,12 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         // aren't intercepted by our SW anyway, so there was nothing to configure there).
         { id:"cours-abdo", name:"Cours focus abdo", met:4.0, location:"maison", type:"video",
           videoId:"WuRpt7G1vrk", videoDurationMin:10, exercises:[] },
+        // Locally hosted (videoFile) rather than embedded, unlike cours-abdo — this one was
+        // sent as a file, not a YouTube link, and its quality (720p h264, 21 Mo for ~10min)
+        // is fine to serve as-is. renderSession() branches on videoId vs videoFile to pick
+        // the iframe or a plain <video>.
+        { id:"cours-fessiers", name:"Cours focus fessiers", met:4.5, location:"maison", type:"video",
+          videoFile:"cours-focus-fessiers.mp4", videoDurationMin:10, exercises:[] },
       ]
     };
   }
@@ -857,12 +863,15 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     document.documentElement.style.setProperty("--accent-ink", t.ink);
   }
 
-  var WORKOUT_COLORS = { haut:"#ff5a33", bas:"#f2b134", abdo:"#3ecf8e", "cours-abdo":"#a855f7" };
+  var WORKOUT_COLORS = { haut:"#ff5a33", bas:"#f2b134", abdo:"#3ecf8e", "cours-abdo":"#a855f7", "cours-fessiers":"#14b8a6" };
+  // Both video courses share the same play-triangle glyph (that's what marks a workout as
+  // "a video", visually) and are told apart by their color instead, same as haut/bas/abdo.
   var WORKOUT_ICONS = {
     haut: '<path d="M3 12h2M19 12h2M6 9v6M18 9v6M8 8v8M16 8v8M8 12h8"/>',
     bas: '<path d="M9 3v7l-3 11h4l2-8 2 8h4l-3-11V3"/>',
     abdo: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
-    "cours-abdo": '<circle cx="12" cy="12" r="9"/><path d="M10.5 8.5l5 3.5-5 3.5v-7z"/>'
+    "cours-abdo": '<circle cx="12" cy="12" r="9"/><path d="M10.5 8.5l5 3.5-5 3.5v-7z"/>',
+    "cours-fessiers": '<circle cx="12" cy="12" r="9"/><path d="M10.5 8.5l5 3.5-5 3.5v-7z"/>'
   };
   function workoutColor(id){ return WORKOUT_COLORS[id] || "#ff5a33"; }
   function findWorkout(id){ return state.workouts.find(function(w){return w.id===id;}); }
@@ -1234,14 +1243,18 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     // already computes calories from met × weight × duration regardless of exercises, so it
     // needs no changes to work here).
     if(w.type === "video"){
+      // Two possible sources: a YouTube embed (videoId — full source quality, needs a
+      // connection) or a locally hosted file (videoFile — works offline once cached).
+      var playerHtml = w.videoId
+        ? '<iframe src="https://www.youtube-nocookie.com/embed/' + escapeAttr(w.videoId) + '?playsinline=1&rel=0" title="' + escapeAttr(w.name) + '" ' +
+            'style="width:100%; aspect-ratio:16/9; display:block; background:#000; border:0;" ' +
+            'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>'
+        : '<video src="videos/' + escapeAttr(w.videoFile) + '" controls playsinline preload="metadata" ' +
+            'style="width:100%; display:block; background:#000;"></video>';
       $view.innerHTML = '<div class="stack" style="margin-top:6px; padding-bottom:8px;">' +
         '<div class="row between"><h2 style="margin:0;">' + w.name + '</h2>' +
         '<button class="btn btn-line btn-sm" id="cancel-session-btn">Annuler</button></div>' +
-        '<div class="card" style="padding:0; overflow:hidden;">' +
-          '<iframe src="https://www.youtube-nocookie.com/embed/' + escapeAttr(w.videoId) + '?playsinline=1&rel=0" title="' + escapeAttr(w.name) + '" ' +
-            'style="width:100%; aspect-ratio:16/9; display:block; background:#000; border:0;" ' +
-            'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>' +
-        '</div>' +
+        '<div class="card" style="padding:0; overflow:hidden;">' + playerHtml + '</div>' +
         '<div class="faint" style="text-align:center;">Appuie sur "Cours terminé" en bas une fois la vidéo finie.</div>' +
       '</div>';
       document.getElementById("cancel-session-btn").addEventListener("click", cancelSession);
