@@ -507,7 +507,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b33";
+  var BUILD_VERSION = "b34";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -972,12 +972,6 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       g.items.push(w);
     });
     var html = '<div class="enter-anim">';
-    if(needsBackupReminder()){
-      html += '<div class="card row between" style="margin-bottom:14px; gap:10px; border-color:var(--accent-dim);">' +
-        '<div style="font-size:12.5px; line-height:1.4;"><b style="color:var(--accent);">Pense à sauvegarder</b><br>Dernière sauvegarde : ' + fmtBackupAge(state.lastBackupAt) + '.</div>' +
-        '<button class="btn btn-accent btn-pill" id="backup-now-btn" style="flex-shrink:0;">Sauvegarder</button>' +
-      '</div>';
-    }
     groups.forEach(function(g){
       html += '<div class="section-title" style="margin:' + (groups.indexOf(g)===0?"2px":"18px") + ' 0 8px;">' + (LOCATION_LABELS[g.loc]||g.loc) + '</div>';
       html += '<div class="workout-grid">';
@@ -1001,8 +995,6 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     $view.querySelectorAll("[data-start]").forEach(function(btn){
       btn.addEventListener("click", function(){ openStartModal(btn.getAttribute("data-start")); });
     });
-    var backupBtn = document.getElementById("backup-now-btn");
-    if(backupBtn) backupBtn.addEventListener("click", function(){ exportData().then(function(){ if(state.currentTab==="home") renderHome(); }); });
   }
 
   function openStartModal(workoutId){
@@ -1778,11 +1770,6 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     if(d <= 0) return "aujourd’hui";
     if(d === 1) return "hier";
     return "il y a " + d + " jours";
-  }
-  // A reminder is worth showing once there's real training data to lose, and either no
-  // backup has ever been made or it's getting stale (2 weeks) — not on a fresh install.
-  function needsBackupReminder(){
-    return state.sessions && state.sessions.length > 0 && daysSince(state.lastBackupAt) >= 14;
   }
   document.getElementById("import-input").addEventListener("change", function(e){
     var file = e.target.files[0]; if(!file) return;
