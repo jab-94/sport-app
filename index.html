@@ -230,7 +230,7 @@ a{color:var(--accent);}
   background:color-mix(in srgb, var(--accent) 20%, var(--glass-bg));
   backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
   border:1px solid var(--accent-dim); border-radius:16px; padding:11px 13px; margin-top:10px; font-size:13px;
-  box-shadow:inset 0 1px 0 var(--glass-hi);
+  box-shadow:inset 0 1px 0 var(--glass-hi); overflow:hidden;
 }
 #resume-banner.show{display:flex}
 #resume-banner b{color:var(--accent)}
@@ -245,7 +245,12 @@ a{color:var(--accent);}
 }
 
 nav#tabs{
-  position:relative;
+  position:relative; overflow:hidden;
+  /* WebKit doesn't always clip backdrop-filter's blur to border-radius on its own — without
+     overflow:hidden here, whatever sits directly behind the bar can bleed through as a
+     hard rectangular edge exactly at the rounded corners (confirmed on-device: a stat-tile's
+     square corner showing through right at the pill's curve). box-shadow is unaffected by
+     overflow:hidden on the element that casts it, so the outer drop shadow below still shows. */
   flex:0 0 auto; display:flex; gap:2px;
   background:var(--ios27-tab-bg); backdrop-filter:var(--ios27-tab-blur); -webkit-backdrop-filter:var(--ios27-tab-blur);
   border:1px solid var(--ios27-tab-rim); border-radius:26px;
@@ -283,7 +288,7 @@ nav#tabs button.active svg{stroke:var(--accent);}
 
 .card{
   background:var(--glass-bg); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
-  border:1px solid var(--glass-border); border-radius:20px;
+  border:1px solid var(--glass-border); border-radius:20px; overflow:hidden;
   padding:16px; box-shadow:var(--shadow), inset 0 1px 0 var(--glass-hi);
 }
 .stack{display:flex; flex-direction:column; gap:12px;}
@@ -295,7 +300,7 @@ nav#tabs button.active svg{stroke:var(--accent);}
 .workout-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:6px;}
 .workout-tile{
   grid-column:span 1; background:var(--glass-bg); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
-  border:1px solid var(--glass-border);
+  border:1px solid var(--glass-border); overflow:hidden;
   border-radius:22px; padding:22px 14px 18px; box-shadow:var(--shadow), inset 0 1px 0 var(--glass-hi);
   display:flex; flex-direction:column; align-items:center; text-align:center; gap:5px;
 }
@@ -315,6 +320,7 @@ nav#tabs button.active svg{stroke:var(--accent);}
 .btn-ghost{
   background:var(--glass-bg); color:var(--ink); border:1px solid var(--glass-border);
   backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur); box-shadow:inset 0 1px 0 var(--glass-hi);
+  overflow:hidden;
 }
 .btn-line{background:rgba(255,255,255,.04); border:1px solid var(--glass-border); color:var(--ink);}
 .btn-danger{background:#e5484d; color:#fff;}
@@ -330,7 +336,7 @@ nav#tabs button.active svg{stroke:var(--accent);}
 }
 
 .pill-group{
-  display:flex; gap:6px; padding:4px; border-radius:16px;
+  display:flex; gap:6px; padding:4px; border-radius:16px; overflow:hidden;
   background:var(--glass-bg); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
   border:1px solid var(--glass-border);
 }
@@ -340,7 +346,7 @@ nav#tabs button.active svg{stroke:var(--accent);}
 .pill.active.neutral{color:var(--accent);}
 
 .ex-card{
-  border:1px solid var(--glass-border); border-radius:18px; padding:14px;
+  border:1px solid var(--glass-border); border-radius:18px; padding:14px; overflow:hidden;
   background:var(--glass-bg); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
   box-shadow:var(--shadow), inset 0 1px 0 var(--glass-hi);
 }
@@ -409,7 +415,7 @@ nav#tabs button.active svg{stroke:var(--accent);}
 .unit{font-size:10px; color:var(--ink-faint); flex-shrink:0; width:26px;}
 
 #session-bar{
-  flex:0 0 auto; margin:0 0 10px; padding:12px 16px;
+  flex:0 0 auto; margin:0 0 10px; padding:12px 16px; overflow:hidden;
   /* MOCKUP EXPERIMENT: the same measured iOS 27 "Regular Small" material as the tab bar,
      instead of the heavier hand-tuned --glass-* tokens — a floating toolbar is exactly
      what that material is specced for. */
@@ -431,12 +437,13 @@ nav#tabs button.active svg{stroke:var(--accent);}
 .stat-tile{
   background:var(--glass-bg); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
   border:1px solid var(--glass-border); border-radius:16px; padding:12px 14px; box-shadow:inset 0 1px 0 var(--glass-hi);
+  overflow:hidden;
 }
 .stat-tile .v{font-family:"IBM Plex Mono"; font-size:22px; font-weight:600; font-variant-numeric:tabular-nums;}
 .stat-tile .l{font-size:11.5px; color:var(--ink-soft); margin-top:2px;}
 
 .hist-item{
-  border:1px solid var(--glass-border); border-radius:16px; padding:12px 14px;
+  border:1px solid var(--glass-border); border-radius:16px; padding:12px 14px; overflow:hidden;
   background:var(--glass-bg); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
   box-shadow:inset 0 1px 0 var(--glass-hi);
 }
@@ -464,6 +471,7 @@ select, input[type=number], input[type=text]{
 .chart-wrap{
   background:var(--glass-bg); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
   border:1px solid var(--glass-border); border-radius:18px; padding:14px 12px 8px; box-shadow:inset 0 1px 0 var(--glass-hi);
+  overflow:hidden;
 }
 svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-faint);}
 
@@ -555,7 +563,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b44";
+  var BUILD_VERSION = "b45";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
