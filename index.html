@@ -141,16 +141,6 @@
      the real material spec calls for at this size, so text over varied content stays readable. */
   --ios27-sheet-bg: rgba(118,118,128,.20);
   --ios27-sheet-blur: blur(24px) saturate(180%);
-  /* #topbar sits directly over the page's own background glow (a bright accent-tinted
-     radial gradient anchored near the top-left, see body{} below) with nothing dimming it
-     first — unlike .sheet, which only ever appears behind .overlay's own dark scrim. The
-     sheet material's saturate(180%) amplifies whatever color is behind it, which on top of
-     that glow blew out into a stark whitish/lavender rectangle on-device (not reproducible
-     in this sandbox's Chromium, only found from a real screenshot). This tint can only ever
-     darken (plain --bg at partial opacity, no saturation boost), so it's safe over any
-     background including a bright one. */
-  --ios27-topbar-bg: rgba(13,15,16,.4);
-  --ios27-topbar-blur: blur(16px);
 }
 *{box-sizing:border-box}
 /* The claude.ai artifact preview silently injects this reset for us; a plain self-hosted
@@ -243,7 +233,14 @@ a{color:var(--accent);}
 #topbar{
   position:absolute; top:0; left:0; right:0; z-index:2;
   padding:14px 0 8px;
-  background:var(--ios27-topbar-bg); backdrop-filter:var(--ios27-topbar-blur); -webkit-backdrop-filter:var(--ios27-topbar-blur);
+  /* No background/backdrop-filter here on purpose, after TWO separate on-device rendering
+     bugs (a washed-out white/lavender patch, then a solid black band) both traced to giving
+     this specific bar a blur right at the safe-area-inset-top boundary — a spot nav#tabs and
+     #session-bar never sit near, which is presumably why they never showed either symptom.
+     Rather than guess at a third combination of blur/tint values blind, this stays fully
+     transparent like the pre-v47 topbar; it still keeps the absolute-overlay positioning
+     from v47 (so title text sits above scrolled content instead of pushing it down), just
+     without any glass material of its own. */
 }
 #topbar h1{font-size:21px; margin:0; color:var(--ink); display:flex; align-items:center; gap:9px;}
 #topbar h1 .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);display:inline-block; box-shadow:0 0 0 4px var(--accent-soft);}
@@ -591,7 +588,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b48";
+  var BUILD_VERSION = "b49";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
