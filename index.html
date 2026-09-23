@@ -594,7 +594,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b51";
+  var BUILD_VERSION = "b52";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -1641,6 +1641,32 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     return best;
   }
 
+  // Re-derives calories/volume for a session record edited after the fact (see editSession
+  // below). Calories track the workout's MET value like finishSession does — if the workout
+  // was since deleted, fall back to scaling the previously stored calories by how much the
+  // duration itself changed, rather than losing the number entirely.
+  function recomputeSessionStats(rec, originalDurationMin, workout){
+    var participants = rec.participants || state.people.map(function(p){return p.id;});
+    var caloriesByPerson = {}, volumeByPerson = {};
+    participants.forEach(function(pid){
+      if(workout){
+        caloriesByPerson[pid] = workout.met * 3.5 * (state.bodyWeights[pid]||70) / 200 * rec.durationMin;
+      } else {
+        var oldCal = (rec.caloriesByPerson && rec.caloriesByPerson[pid]) || 0;
+        caloriesByPerson[pid] = originalDurationMin > 0 ? oldCal * (rec.durationMin / originalDurationMin) : oldCal;
+      }
+      volumeByPerson[pid] = 0;
+    });
+    (rec.exercises||[]).forEach(function(e){
+      participants.forEach(function(pid){
+        var en = e.entries[pid];
+        if(en && en.done && e.trackWeight) volumeByPerson[pid] += (en.weight||0) * (e.sets||0) * (en.reps||0);
+      });
+    });
+    rec.caloriesByPerson = caloriesByPerson;
+    rec.volumeByPerson = volumeByPerson;
+  }
+
   function showSummary(record, prsByPerson){
     var overlay = document.getElementById("summary-overlay"), sheet = document.getElementById("summary-sheet");
     var participants = record.participants || state.people.map(function(p){return p.id;});
@@ -1699,6 +1725,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       html += '<div class="hist-item" data-hist="' + s.id + '">' +
         '<div class="top"><div><div class="date">' + s.workoutName + '</div><div class="faint">' + fmtDateFull(s.date) + '</div></div>' +
         '<div class="row" style="gap:6px; flex-shrink:0;"><span class="badge">' + fmtDur(s.durationMin) + '</span>' +
+        '<button class="icon-btn" data-edit-session="' + s.id + '"><svg viewBox="0 0 24 24"><path d="M4 20h4L20 8l-4-4L4 16v4Z"/><path d="M13 7l4 4"/></svg></button>' +
         '<button class="icon-btn" data-del-session="' + s.id + '"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></div>' +
         '<div class="row" style="margin-top:8px; gap:16px; flex-wrap:wrap;">' +
         participants.map(function(pid){
@@ -1723,6 +1750,12 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     $view.querySelectorAll("[data-hist]").forEach(function(card){
       card.addEventListener("click", function(){ document.getElementById("detail-" + card.getAttribute("data-hist")).classList.toggle("show"); });
     });
+    $view.querySelectorAll("[data-edit-session]").forEach(function(btn){
+      btn.addEventListener("click", function(ev){
+        ev.stopPropagation();
+        openEditSessionModal(btn.getAttribute("data-edit-session"));
+      });
+    });
     $view.querySelectorAll("[data-del-session]").forEach(function(btn){
       btn.addEventListener("click", function(ev){
         ev.stopPropagation();
@@ -1733,6 +1766,117 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         }, true);
       });
     });
+  }
+
+  // Lets you fix up a session after the fact (forgot to hit "Terminé" so the duration is
+  // wrong, mis-entered a weight/rep count, or want to add/remove an exercise). Edits happen
+  // on a clone — nothing touches state.sessions until "Enregistrer" — so cancelling, or
+  // add/remove-exercise re-rendering the form, never leaves a half-applied edit lying around.
+  function openEditSessionModal(sid){
+    var orig = state.sessions.find(function(x){ return x.id === sid; });
+    if(!orig) return;
+    var clone = JSON.parse(JSON.stringify(orig));
+    var originalDurationMin = orig.durationMin;
+    var workout = findWorkout(clone.workoutId);
+    var isVideo = workout && workout.type === "video";
+    var participants = clone.participants || state.people.map(function(p){ return p.id; });
+    var overlay = document.getElementById("summary-overlay"), sheet = document.getElementById("summary-sheet");
+
+    function syncFormToClone(){
+      var durInput = document.getElementById("edit-duration");
+      if(durInput) clone.durationMin = Math.max(1, parseFloat(durInput.value) || clone.durationMin);
+      if(isVideo) return;
+      clone.exercises.forEach(function(e, exIdx){
+        var nameEl = sheet.querySelector('[data-edit-name="' + exIdx + '"]');
+        if(nameEl) e.name = nameEl.value.trim();
+        var twEl = sheet.querySelector('[data-edit-trackweight="' + exIdx + '"]');
+        if(twEl) e.trackWeight = twEl.checked;
+        var setsEl = sheet.querySelector('[data-edit-sets="' + exIdx + '"]');
+        if(setsEl) e.sets = Math.max(1, parseInt(setsEl.value, 10) || e.sets);
+        participants.forEach(function(pid){
+          if(!e.entries[pid]) return;
+          var wEl = sheet.querySelector('[data-edit-weight="' + exIdx + '"][data-edit-pid="' + pid + '"]');
+          if(wEl) e.entries[pid].weight = Math.max(0, parseFloat(wEl.value) || 0);
+          var rEl = sheet.querySelector('[data-edit-reps="' + exIdx + '"][data-edit-pid="' + pid + '"]');
+          if(rEl) e.entries[pid].reps = Math.max(0, parseInt(rEl.value, 10) || 0);
+          var dEl = sheet.querySelector('[data-edit-done="' + exIdx + '"][data-edit-pid="' + pid + '"]');
+          if(dEl) e.entries[pid].done = dEl.checked;
+        });
+      });
+    }
+
+    function renderForm(){
+      var html = '<h2 class="disp">Modifier la séance</h2>' +
+        '<div class="muted" style="margin-bottom:14px;">' + escapeAttr(clone.workoutName) + ' · ' + fmtDateFull(clone.date) + '</div>';
+      html += '<div class="stack" style="gap:14px; margin-bottom:18px;">';
+      html += '<label class="stack" style="gap:4px;"><span class="faint" style="font-size:12.5px;">Durée (minutes)</span>' +
+        '<input type="number" min="1" step="1" id="edit-duration" value="' + Math.round(clone.durationMin) + '" style="width:100%;"></label>';
+
+      if(isVideo){
+        html += '<div class="faint">Cours vidéo — pas de détail exercice par exercice à modifier.</div>';
+      } else {
+        clone.exercises.forEach(function(e, exIdx){
+          html += '<div class="card" style="padding:12px;">' +
+            '<div class="row" style="gap:8px; margin-bottom:8px;">' +
+              '<input type="text" data-edit-name="' + exIdx + '" value="' + escapeAttr(e.name) + '" placeholder="Nom de l’exercice" style="flex:1;">' +
+              '<button class="icon-btn" type="button" data-remove-ex="' + exIdx + '"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
+            '</div>' +
+            '<div class="row" style="gap:14px; margin-bottom:8px; font-size:12px;">' +
+              '<label class="row" style="gap:5px;"><input type="checkbox" data-edit-trackweight="' + exIdx + '" ' + (e.trackWeight?"checked":"") + '> Poids suivi</label>' +
+              '<label class="row" style="gap:5px;">Séries <input type="number" min="1" step="1" data-edit-sets="' + exIdx + '" value="' + e.sets + '" style="width:48px;"></label>' +
+            '</div>';
+          participants.forEach(function(pid){
+            var en = e.entries[pid];
+            if(!en) return;
+            html += '<div class="row" style="gap:8px; align-items:center; margin-bottom:6px;">' +
+              '<span class="faint" style="width:42px; flex-shrink:0; font-size:12.5px;">' + escapeAttr(personName(pid)) + '</span>' +
+              (e.trackWeight ? '<input type="number" min="0" step="0.5" data-edit-weight="' + exIdx + '" data-edit-pid="' + pid + '" value="' + en.weight + '" style="width:64px;" placeholder="kg">' : '') +
+              '<input type="number" min="0" step="1" data-edit-reps="' + exIdx + '" data-edit-pid="' + pid + '" value="' + en.reps + '" style="width:56px;" placeholder="reps">' +
+              '<label class="row" style="gap:4px; font-size:11.5px;"><input type="checkbox" data-edit-done="' + exIdx + '" data-edit-pid="' + pid + '" ' + (en.done?"checked":"") + '> fait</label>' +
+            '</div>';
+          });
+          html += '</div>';
+        });
+        html += '<button class="btn btn-line btn-block" type="button" id="edit-add-ex">+ Ajouter un exercice</button>';
+      }
+      html += '</div>';
+      html += '<div class="row" style="gap:10px;">' +
+        '<button class="btn btn-ghost btn-block" id="edit-session-cancel">Annuler</button>' +
+        '<button class="btn btn-accent btn-block" id="edit-session-save">Enregistrer</button>' +
+      '</div>';
+      sheet.innerHTML = html;
+
+      document.getElementById("edit-session-cancel").addEventListener("click", function(){ closeOverlay(overlay, sheet); });
+      document.getElementById("edit-session-save").addEventListener("click", function(){
+        syncFormToClone();
+        if(!isVideo) clone.exercises = clone.exercises.filter(function(e){ return e.name; });
+        recomputeSessionStats(clone, originalDurationMin, workout);
+        var idx = state.sessions.findIndex(function(x){ return x.id === sid; });
+        if(idx !== -1) state.sessions[idx] = clone;
+        save();
+        closeOverlay(overlay, sheet);
+        renderHistory();
+      });
+      if(!isVideo){
+        sheet.querySelectorAll("[data-remove-ex]").forEach(function(btn){
+          btn.addEventListener("click", function(){
+            syncFormToClone();
+            clone.exercises.splice(+btn.getAttribute("data-remove-ex"), 1);
+            renderForm();
+          });
+        });
+        document.getElementById("edit-add-ex").addEventListener("click", function(){
+          syncFormToClone();
+          var entries = {};
+          participants.forEach(function(pid){ entries[pid] = { weight:0, reps:10, done:true }; });
+          clone.exercises.push({ exId:"adhoc-" + uid(), name:"", trackWeight:true, sets:3, entries:entries });
+          renderForm();
+        });
+      }
+    }
+
+    overlay.classList.add("show");
+    renderForm();
   }
 
   // ---------- PROGRESS ----------
