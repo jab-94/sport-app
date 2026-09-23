@@ -486,7 +486,7 @@ nav#tabs button.active svg{stroke:var(--accent);}
 .hist-detail .exname:first-child{margin-top:0;}
 .hist-detail .exline{display:flex; justify-content:space-between; padding:2px 0 2px 10px;}
 
-select, input[type=number], input[type=text]{
+select, input[type=number], input[type=text], input[type=password]{
   background:rgba(255,255,255,.05); border:1px solid var(--glass-border); color:var(--ink); border-radius:10px; padding:9px 10px; font-size:14px;
 }
 
@@ -579,6 +579,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     <button data-tab="home"><svg viewBox="0 0 24 24"><path d="M4 12l8-7 8 7M6 10v9h5v-5h2v5h5v-9"/></svg>Séances</button>
     <button data-tab="history"><svg viewBox="0 0 24 24"><path d="M3 3v6h6M3.5 13a8.5 8.5 0 1 0 2-8.8L3 9"/><path d="M12 8v5l3 2"/></svg>Historique</button>
     <button data-tab="progress"><svg viewBox="0 0 24 24"><path d="M4 20V10M11 20V4M18 20v-7"/></svg>Progrès</button>
+    <button data-tab="nutrition"><svg viewBox="0 0 24 24"><path d="M5 3v6M7 3v6M9 3v6M7 9v12"/><path d="M17 3c-2 0-3 2-3 5s1 5 3 5v8"/></svg>Nutrition</button>
     <button data-tab="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12a7 7 0 0 0 .1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.07-.4.1-.8.1-1.2Z"/></svg>Réglages</button>
   </nav>
 </div>
@@ -594,7 +595,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b52";
+  var BUILD_VERSION = "b53";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -667,6 +668,15 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       // stays the single "current" number everything else (calorie burn, nutrition targets)
       // reads, this is purely the history for the Progrès chart.
       bodyWeightLog: { p1:[], p2:[] },
+      // Meal cards you cook/eat regularly ("mes plats") + the day-by-day log of what was
+      // actually eaten (see the NUTRITION LOG section) — kept separate from sessions/workouts,
+      // and from the BMR/TDEE targets above which stay purely computed, never stored.
+      dishes: [],
+      foodLog: [],
+      // Your own Gemini API key, pasted once in Réglages — never shipped in the app's source
+      // (this repo is public; a key committed to git would be found by scanners within
+      // minutes). It lives here so it syncs to both phones the same way everything else does.
+      geminiApiKey: "",
       currentTab: "home",
       currentPerson: "p1",
       activeSession: null,
@@ -795,7 +805,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     return st;
   }
 
-  var state = ensureRestDuration(ensureBodyWeightLog(ensureBodyProfiles(migrateContent(load()))));
+  var state = ensureNutritionLogData(ensureRestDuration(ensureBodyWeightLog(ensureBodyProfiles(migrateContent(load())))));
   // Older saves (before the nutrition feature) have no bodyProfiles at all, or are missing
   // an entry for a person added since. Patch defaults in rather than bumping CONTENT_VERSION,
   // which would also touch workouts/exercises the person may have hand-edited.
@@ -815,6 +825,13 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Same idea for saves made before the rest timer's default duration was configurable.
   function ensureRestDuration(st){
     if(!st.restDurationDefault) st.restDurationDefault = 90;
+    return st;
+  }
+  // Same idea for saves made before the nutrition log (meal cards + food diary) existed.
+  function ensureNutritionLogData(st){
+    if(!st.dishes) st.dishes = [];
+    if(!st.foodLog) st.foodLog = [];
+    if(st.geminiApiKey == null) st.geminiApiKey = "";
     return st;
   }
   function load(){
@@ -1144,6 +1161,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     else if(tab==="session") renderSession();
     else if(tab==="history") renderHistory();
     else if(tab==="progress") renderProgress();
+    else if(tab==="nutrition") renderNutrition();
     else if(tab==="settings") renderSettings();
     // Local-only: just remembers which tab you're on across a relaunch. Using the
     // version-bumping save() here instead would count every tab switch (and every
@@ -2060,6 +2078,230 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     save();
   }
 
+  // ---------- NUTRITION LOG (meal cards + food diary) ----------
+  // A "dish" is a reusable card (home-cooked meal, restaurant dish, or a packaged product's
+  // label values) — either "per portion" (fixed serving, scaled by a portion count when
+  // logged) or "per 100g" (scaled by grams eaten, like a nutrition label). Logging a dish
+  // snapshots the computed totals into foodLog rather than storing a live reference to the
+  // dish, so editing or deleting a card later never rewrites what was actually eaten that day.
+  function renderNutrition(){
+    var pid = state.currentPerson || "p1";
+    var todayKey = new Date().toDateString();
+    var todayEntries = state.foodLog.filter(function(e){ return e.personId===pid && new Date(e.date).toDateString()===todayKey; });
+    var eatenKcal = todayEntries.reduce(function(a,e){ return a+e.kcal; }, 0);
+    var eatenProtein = todayEntries.reduce(function(a,e){ return a+e.protein; }, 0);
+    var nut = calcNutritionTargets(pid);
+
+    var html = '<div class="stack enter-anim" style="margin-top:6px;">';
+    html += '<div class="pill-group">' + state.people.map(function(pl){
+      return '<button class="pill ' + (pl.id===pid?"active":"") + ' ' + (pl.id==="p2"?"p2":"") + '" data-person-select="' + pl.id + '">' + escapeAttr(pl.name) + '</button>';
+    }).join("") + '</div>';
+
+    html += '<div class="section-title">Aujourd’hui — ' + escapeAttr(personName(pid)) + '</div>';
+    html += '<div class="stat-grid">' +
+      stat(Math.round(eatenKcal) + (nut ? " / " + nut.calories : "") + " kcal", "Calories") +
+      stat(Math.round(eatenProtein) + (nut ? " / " + nut.protein : "") + " g", "Protéines") +
+    '</div>';
+    if(!nut) html += '<div class="faint">Renseigne le profil de ' + escapeAttr(personName(pid)) + ' dans Réglages pour voir aussi ses objectifs.</div>';
+
+    if(todayEntries.length){
+      html += '<div class="stack" style="gap:6px;">' + todayEntries.map(function(e){
+        return '<div class="card row between" style="padding:10px 14px;">' +
+          '<div><div style="font-weight:600; font-size:13.5px;">' + escapeAttr(e.dishName) + '</div>' +
+          '<div class="faint" style="font-size:11.5px;">' + round1(e.quantity) + ' ' + e.unit + ' · ' + Math.round(e.kcal) + ' kcal · ' + Math.round(e.protein) + ' g prot.</div></div>' +
+          '<button class="icon-btn" data-del-food="' + e.id + '"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
+        '</div>';
+      }).join("") + '</div>';
+    } else {
+      html += '<div class="empty">Rien d’enregistré aujourd’hui pour ' + escapeAttr(personName(pid)) + '.</div>';
+    }
+
+    html += '<div class="section-title">Mes plats</div>';
+    html += '<button class="btn btn-line btn-block" type="button" id="new-dish-btn">+ Nouveau plat</button>';
+    if(state.dishes.length){
+      html += '<div class="stack" style="gap:8px;">' + state.dishes.map(function(d){
+        var unitLabel = d.basis === "100g" ? "/ 100g" : "/ portion";
+        return '<div class="card" style="padding:12px 14px; cursor:pointer;" data-dish-card="' + d.id + '">' +
+          '<div class="row between" style="align-items:center; gap:10px;">' +
+            (d.photoThumb ? '<img src="' + d.photoThumb + '" style="width:44px; height:44px; border-radius:10px; object-fit:cover; flex-shrink:0;">' : '') +
+            '<div style="flex:1; min-width:0;"><div style="font-weight:600; font-size:13.5px;">' + escapeAttr(d.name) + '</div>' +
+            '<div class="faint" style="font-size:11.5px;">' + Math.round(d.kcal) + ' kcal · ' + Math.round(d.protein) + ' g prot. ' + unitLabel + (d.tag ? ' · ' + escapeAttr(d.tag) : '') + '</div></div>' +
+            '<button class="icon-btn" type="button" data-del-dish="' + d.id + '" style="flex-shrink:0;"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
+          '</div>' +
+        '</div>';
+      }).join("") + '</div>';
+    } else {
+      html += '<div class="empty">Aucun plat enregistré — ajoute tes plats habituels pour les logger en un tap.</div>';
+    }
+    html += '</div>';
+    $view.innerHTML = html;
+
+    $view.querySelectorAll("[data-person-select]").forEach(function(btn){
+      btn.addEventListener("click", function(){ state.currentPerson = btn.getAttribute("data-person-select"); save(); renderNutrition(); });
+    });
+    $view.querySelectorAll("[data-del-food]").forEach(function(btn){
+      btn.addEventListener("click", function(ev){
+        ev.stopPropagation();
+        var id = btn.getAttribute("data-del-food");
+        state.foodLog = state.foodLog.filter(function(e){ return e.id !== id; });
+        save(); renderNutrition();
+      });
+    });
+    document.getElementById("new-dish-btn").addEventListener("click", function(){ openDishModal(); });
+    $view.querySelectorAll("[data-dish-card]").forEach(function(card){
+      card.addEventListener("click", function(ev){
+        if(ev.target.closest("[data-del-dish]")) return;
+        openLogDishModal(card.getAttribute("data-dish-card"));
+      });
+    });
+    $view.querySelectorAll("[data-del-dish]").forEach(function(btn){
+      btn.addEventListener("click", function(ev){
+        ev.stopPropagation();
+        var id = btn.getAttribute("data-del-dish");
+        showConfirm("Supprimer ce plat ?", "Il sera retiré de tes plats — les entrées déjà enregistrées dans ton journal ne changent pas.", "Supprimer", function(){
+          state.dishes = state.dishes.filter(function(d){ return d.id !== id; });
+          save(); renderNutrition();
+        }, true);
+      });
+    });
+  }
+
+  // Downscales+recompresses an uploaded/captured photo client-side before it ever touches
+  // localStorage — an uncompressed phone photo (several MB) would blow through the ~5-10MB
+  // localStorage quota after just a handful of dishes; a small JPEG thumbnail keeps years of
+  // cards affordable.
+  function compressImageToThumb(file, maxSize, cb){
+    var reader = new FileReader();
+    reader.onload = function(){
+      var img = new Image();
+      img.onload = function(){
+        var scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+        var w = Math.max(1, Math.round(img.width*scale)), h = Math.max(1, Math.round(img.height*scale));
+        var canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        cb(canvas.toDataURL("image/jpeg", 0.6));
+      };
+      img.onerror = function(){};
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // Add-or-edit form for a meal card. Pass an existing dish's id to edit it in place; omit it
+  // to create a new one.
+  function openDishModal(dishId){
+    var existing = dishId ? state.dishes.find(function(d){ return d.id === dishId; }) : null;
+    var overlay = document.getElementById("summary-overlay"), sheet = document.getElementById("summary-sheet");
+    var photoThumb = existing ? existing.photoThumb : null;
+
+    sheet.innerHTML = '<h2 class="disp">' + (existing ? "Modifier le plat" : "Nouveau plat") + '</h2>' +
+      '<div class="stack" style="gap:10px; margin-bottom:18px;">' +
+        '<input type="text" id="dish-name" placeholder="Nom du plat" value="' + (existing ? escapeAttr(existing.name) : "") + '" style="width:100%;">' +
+        '<div class="row" style="gap:14px; font-size:12.5px;">' +
+          '<label class="row" style="gap:5px;"><input type="radio" name="dish-basis" value="portion" ' + (!existing || existing.basis==="portion" ? "checked" : "") + '> Par portion</label>' +
+          '<label class="row" style="gap:5px;"><input type="radio" name="dish-basis" value="100g" ' + (existing && existing.basis==="100g" ? "checked" : "") + '> Pour 100g</label>' +
+        '</div>' +
+        '<div class="row" style="gap:8px;">' +
+          '<input type="number" id="dish-kcal" placeholder="kcal" min="0" step="1" value="' + (existing ? existing.kcal : "") + '" style="flex:1;">' +
+          '<input type="number" id="dish-protein" placeholder="Protéines (g)" min="0" step="0.1" value="' + (existing ? existing.protein : "") + '" style="flex:1;">' +
+        '</div>' +
+        '<div class="row" style="gap:8px;">' +
+          '<input type="number" id="dish-carbs" placeholder="Glucides (g, optionnel)" min="0" step="0.1" value="' + (existing && existing.carbs!=null ? existing.carbs : "") + '" style="flex:1;">' +
+          '<input type="number" id="dish-fat" placeholder="Lipides (g, optionnel)" min="0" step="0.1" value="' + (existing && existing.fat!=null ? existing.fat : "") + '" style="flex:1;">' +
+        '</div>' +
+        '<input type="text" id="dish-tag" placeholder="Tag (maison, resto, produit... optionnel)" value="' + (existing ? escapeAttr(existing.tag||"") : "") + '" style="width:100%;">' +
+        '<label class="stack" style="gap:6px;"><span class="faint" style="font-size:12.5px;">Photo (optionnel)</span>' +
+        '<input type="file" id="dish-photo" accept="image/*" capture="environment"></label>' +
+        '<img id="dish-photo-preview" src="' + (photoThumb||"") + '" style="' + (photoThumb?"":"display:none;") + ' width:100%; max-height:160px; object-fit:cover; border-radius:12px;">' +
+      '</div>' +
+      '<div class="row" style="gap:10px;">' +
+        '<button class="btn btn-ghost btn-block" id="dish-cancel">Annuler</button>' +
+        '<button class="btn btn-accent btn-block" id="dish-confirm">' + (existing ? "Enregistrer" : "Ajouter") + '</button>' +
+      '</div>';
+    overlay.classList.add("show");
+
+    document.getElementById("dish-photo").addEventListener("change", function(ev){
+      var file = ev.target.files[0]; if(!file) return;
+      compressImageToThumb(file, 160, function(dataUrl){
+        photoThumb = dataUrl;
+        var img = document.getElementById("dish-photo-preview");
+        img.src = dataUrl; img.style.display = "block";
+      });
+    });
+    document.getElementById("dish-cancel").addEventListener("click", function(){ closeOverlay(overlay, sheet); });
+    document.getElementById("dish-confirm").addEventListener("click", function(){
+      var name = document.getElementById("dish-name").value.trim();
+      if(!name){ showAlert("Donne un nom au plat."); return; }
+      var kcal = parseFloat(document.getElementById("dish-kcal").value);
+      var protein = parseFloat(document.getElementById("dish-protein").value);
+      if(!isFinite(kcal) || !isFinite(protein)){ showAlert("Renseigne au moins les calories et les protéines."); return; }
+      var basis = (sheet.querySelector('input[name="dish-basis"]:checked')||{}).value || "portion";
+      var carbsVal = parseFloat(document.getElementById("dish-carbs").value);
+      var fatVal = parseFloat(document.getElementById("dish-fat").value);
+      var tag = document.getElementById("dish-tag").value.trim();
+      var dish = existing || { id: uid(), createdAt: new Date().toISOString() };
+      dish.name = name; dish.basis = basis; dish.kcal = kcal; dish.protein = protein;
+      dish.carbs = isFinite(carbsVal) ? carbsVal : null;
+      dish.fat = isFinite(fatVal) ? fatVal : null;
+      dish.tag = tag; dish.photoThumb = photoThumb;
+      if(!existing) state.dishes.push(dish);
+      save();
+      closeOverlay(overlay, sheet);
+      renderNutrition();
+    });
+  }
+
+  // Logs a quantity of an existing dish into today's food diary for the current person —
+  // scales the card's per-portion or per-100g macros by the quantity entered, and snapshots
+  // the result (see the NUTRITION LOG comment above for why it's a snapshot, not a reference).
+  function openLogDishModal(dishId){
+    var dish = state.dishes.find(function(d){ return d.id === dishId; });
+    if(!dish) return;
+    var overlay = document.getElementById("summary-overlay"), sheet = document.getElementById("summary-sheet");
+    var isGrams = dish.basis === "100g";
+    var unitLabel = isGrams ? "grammes" : "portions";
+    var defaultQty = isGrams ? 100 : 1;
+    var step = isGrams ? 10 : 0.5;
+
+    sheet.innerHTML = '<h2 class="disp">' + escapeAttr(dish.name) + '</h2>' +
+      '<div class="stack" style="gap:10px; margin-bottom:18px;">' +
+        '<label class="stack" style="gap:4px;"><span class="faint" style="font-size:12.5px;">Quantité (' + unitLabel + ')</span>' +
+        '<input type="number" id="log-qty" min="0" step="' + step + '" value="' + defaultQty + '" style="width:100%;"></label>' +
+        '<div class="faint" id="log-qty-preview"></div>' +
+        '<button class="btn btn-ghost btn-sm" type="button" id="edit-dish-from-log" style="align-self:flex-start;">Modifier ce plat</button>' +
+      '</div>' +
+      '<div class="row" style="gap:10px;">' +
+        '<button class="btn btn-ghost btn-block" id="log-qty-cancel">Annuler</button>' +
+        '<button class="btn btn-accent btn-block" id="log-qty-confirm">Ajouter</button>' +
+      '</div>';
+    overlay.classList.add("show");
+
+    function updatePreview(){
+      var qty = parseFloat(document.getElementById("log-qty").value) || 0;
+      var scale = isGrams ? qty/100 : qty;
+      document.getElementById("log-qty-preview").textContent =
+        Math.round(dish.kcal*scale) + " kcal · " + Math.round(dish.protein*scale) + " g de protéines";
+    }
+    document.getElementById("log-qty").addEventListener("input", updatePreview);
+    updatePreview();
+    document.getElementById("log-qty-cancel").addEventListener("click", function(){ closeOverlay(overlay, sheet); });
+    document.getElementById("edit-dish-from-log").addEventListener("click", function(){ openDishModal(dishId); });
+    document.getElementById("log-qty-confirm").addEventListener("click", function(){
+      var qty = parseFloat(document.getElementById("log-qty").value) || 0;
+      var scale = isGrams ? qty/100 : qty;
+      state.foodLog.push({
+        id: uid(), personId: state.currentPerson || "p1", date: new Date().toISOString(),
+        dishName: dish.name, quantity: qty, unit: unitLabel,
+        kcal: dish.kcal*scale, protein: dish.protein*scale,
+        carbs: dish.carbs!=null ? dish.carbs*scale : null, fat: dish.fat!=null ? dish.fat*scale : null
+      });
+      save();
+      closeOverlay(overlay, sheet);
+      renderNutrition();
+    });
+  }
+
   // ---------- SETTINGS ----------
   var settingsOpen = {}; // which workout accordions are expanded (resets on page reload, that's fine)
   function renderSettings(){
@@ -2119,6 +2361,12 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       }).join("") +
       '<div class="faint">Le poids sert à estimer les calories dépensées pendant les séances. Taille + âge + sexe + activité donnent les calories & protéines à viser chaque jour (visible dans Progrès).</div>' +
       '</div>' +
+    '</div>';
+
+    html += '<div class="card stack">' +
+      '<div class="section-title">Estimation des macros par photo (Nutrition)</div>' +
+      '<label class="pf-field">Clé API Gemini<input type="password" id="gemini-key-input" placeholder="Colle ta clé ici" value="' + escapeAttr(state.geminiApiKey||"") + '"></label>' +
+      '<div class="faint">Gratuite sur aistudio.google.com/apikey. Reste uniquement sur tes appareils (jamais dans le code de l’app) — pense à la restreindre par "HTTP referrer" à ce site dans Google Cloud Console.</div>' +
     '</div>';
 
     state.workouts.forEach(function(w){
@@ -2187,6 +2435,10 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       if(isNaN(v) || v < 10) v = state.restDurationDefault;
       this.value = v;
       state.restDurationDefault = v;
+      save();
+    });
+    document.getElementById("gemini-key-input").addEventListener("change", function(){
+      state.geminiApiKey = this.value.trim();
       save();
     });
     $view.querySelectorAll("[data-person-name]").forEach(function(inp){
