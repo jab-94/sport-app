@@ -595,7 +595,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b53";
+  var BUILD_VERSION = "b54";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -805,7 +805,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     return st;
   }
 
-  var state = ensureNutritionLogData(ensureRestDuration(ensureBodyWeightLog(ensureBodyProfiles(migrateContent(load())))));
+  var state = migrateBasicFoods(ensureNutritionLogData(ensureRestDuration(ensureBodyWeightLog(ensureBodyProfiles(migrateContent(load()))))));
   // Older saves (before the nutrition feature) have no bodyProfiles at all, or are missing
   // an entry for a person added since. Patch defaults in rather than bumping CONTENT_VERSION,
   // which would also touch workouts/exercises the person may have hand-edited.
@@ -832,6 +832,33 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     if(!st.dishes) st.dishes = [];
     if(!st.foodLog) st.foodLog = [];
     if(st.geminiApiKey == null) st.geminiApiKey = "";
+    return st;
+  }
+  // A small starter set of "Mes plats" cards for raw fruit, values per 100g (reference
+  // tables, e.g. USDA/CIQUAL) — a convenience seed, not a food database: add more the same
+  // way you add any other dish. FOOD_CONTENT_VERSION follows the same one-way merge-by-id
+  // pattern as CONTENT_VERSION/migrateContent, so bumping it later to add more basics won't
+  // touch or duplicate ones already here (including ones you've since edited or deleted).
+  var FOOD_CONTENT_VERSION = 1;
+  function defaultBasicFoods(){
+    return [
+      { id:"food-banane", name:"Banane", basis:"100g", kcal:89, protein:1.1, carbs:22.8, fat:0.3, tag:"fruit" },
+      { id:"food-pomme", name:"Pomme", basis:"100g", kcal:52, protein:0.3, carbs:13.8, fat:0.2, tag:"fruit" },
+      { id:"food-kiwi-jaune", name:"Kiwi jaune", basis:"100g", kcal:63, protein:1.0, carbs:14.7, fat:0.5, tag:"fruit" },
+      { id:"food-nectarine", name:"Nectarine", basis:"100g", kcal:44, protein:1.1, carbs:10.5, fat:0.3, tag:"fruit" },
+    ];
+  }
+  function migrateBasicFoods(st){
+    if(!st.foodContentVersion) st.foodContentVersion = 0;
+    if(st.foodContentVersion >= FOOD_CONTENT_VERSION) return st;
+    defaultBasicFoods().forEach(function(fd){
+      if(!st.dishes.some(function(d){ return d.id === fd.id; })){
+        var dish = JSON.parse(JSON.stringify(fd));
+        dish.createdAt = new Date().toISOString();
+        st.dishes.push(dish);
+      }
+    });
+    st.foodContentVersion = FOOD_CONTENT_VERSION;
     return st;
   }
   function load(){
@@ -2084,12 +2111,41 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // logged) or "per 100g" (scaled by grams eaten, like a nutrition label). Logging a dish
   // snapshots the computed totals into foodLog rather than storing a live reference to the
   // dish, so editing or deleting a card later never rewrites what was actually eaten that day.
+  var MEALS = { petitdej:"Petit déjeuner", dejeuner:"Déjeuner", collation:"Collation", diner:"Dîner" };
+  // Which day the journal (and any new log entry) currently points at — resets to today on
+  // reload, like historyFilter/settingsOpen elsewhere. Navigating back a day lets you log a
+  // meal you forgot yesterday, the same spirit as editing a past session in Historique.
+  var nutritionViewDate = new Date();
+  var dishSearch = "", dishTagFilter = "all";
+  function dayKey(d){ return new Date(d).toDateString(); }
+  function guessMealForNow(){
+    var h = new Date().getHours();
+    if(h < 10) return "petitdej";
+    if(h < 15) return "dejeuner";
+    if(h < 19) return "collation";
+    return "diner";
+  }
+  // Daily totals for one macro field over the last `days` days (today inclusive), for the
+  // trend charts — reuses renderLineChartSvg, the same line-chart helper as the body-weight
+  // and exercise-load charts in Progrès.
+  function nutritionTrendPoints(pid, field, days){
+    var points = [];
+    for(var i=days-1; i>=0; i--){
+      var d = new Date(); d.setDate(d.getDate()-i);
+      var key = dayKey(d);
+      var total = state.foodLog.filter(function(e){ return e.personId===pid && dayKey(e.date)===key; })
+        .reduce(function(a,e){ return a + (e[field]||0); }, 0);
+      points.push({ date: d.toISOString(), value: Math.round(total) });
+    }
+    return points;
+  }
   function renderNutrition(){
     var pid = state.currentPerson || "p1";
-    var todayKey = new Date().toDateString();
-    var todayEntries = state.foodLog.filter(function(e){ return e.personId===pid && new Date(e.date).toDateString()===todayKey; });
-    var eatenKcal = todayEntries.reduce(function(a,e){ return a+e.kcal; }, 0);
-    var eatenProtein = todayEntries.reduce(function(a,e){ return a+e.protein; }, 0);
+    var viewKey = dayKey(nutritionViewDate);
+    var isToday = viewKey === dayKey(new Date());
+    var dayEntries = state.foodLog.filter(function(e){ return e.personId===pid && dayKey(e.date)===viewKey; });
+    var eatenKcal = dayEntries.reduce(function(a,e){ return a+e.kcal; }, 0);
+    var eatenProtein = dayEntries.reduce(function(a,e){ return a+e.protein; }, 0);
     var nut = calcNutritionTargets(pid);
 
     var html = '<div class="stack enter-anim" style="margin-top:6px;">';
@@ -2097,31 +2153,69 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       return '<button class="pill ' + (pl.id===pid?"active":"") + ' ' + (pl.id==="p2"?"p2":"") + '" data-person-select="' + pl.id + '">' + escapeAttr(pl.name) + '</button>';
     }).join("") + '</div>';
 
-    html += '<div class="section-title">Aujourd’hui — ' + escapeAttr(personName(pid)) + '</div>';
+    html += '<div class="row between" style="align-items:center;">' +
+      '<button class="icon-btn" type="button" id="nutri-day-prev"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>' +
+      '<div style="font-weight:600; text-align:center; flex:1;">' + (isToday ? "Aujourd’hui" : fmtDateFull(nutritionViewDate.toISOString())) + '</div>' +
+      '<button class="icon-btn" type="button" id="nutri-day-next" ' + (isToday ? 'style="opacity:.3;" disabled' : '') + '><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>' +
+    '</div>';
+
+    html += '<div class="section-title">' + escapeAttr(personName(pid)) + (isToday ? '' : ' — ' + fmtDate(nutritionViewDate.toISOString())) + '</div>';
     html += '<div class="stat-grid">' +
       stat(Math.round(eatenKcal) + (nut ? " / " + nut.calories : "") + " kcal", "Calories") +
       stat(Math.round(eatenProtein) + (nut ? " / " + nut.protein : "") + " g", "Protéines") +
     '</div>';
     if(!nut) html += '<div class="faint">Renseigne le profil de ' + escapeAttr(personName(pid)) + ' dans Réglages pour voir aussi ses objectifs.</div>';
 
-    if(todayEntries.length){
-      html += '<div class="stack" style="gap:6px;">' + todayEntries.map(function(e){
-        return '<div class="card row between" style="padding:10px 14px;">' +
-          '<div><div style="font-weight:600; font-size:13.5px;">' + escapeAttr(e.dishName) + '</div>' +
-          '<div class="faint" style="font-size:11.5px;">' + round1(e.quantity) + ' ' + e.unit + ' · ' + Math.round(e.kcal) + ' kcal · ' + Math.round(e.protein) + ' g prot.</div></div>' +
-          '<button class="icon-btn" data-del-food="' + e.id + '"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
+    if(dayEntries.length){
+      html += '<div class="stack" style="gap:12px;">' + Object.keys(MEALS).map(function(mk){
+        var items = dayEntries.filter(function(e){ return (e.meal||"collation") === mk; });
+        if(!items.length) return "";
+        var mealKcal = items.reduce(function(a,e){ return a+e.kcal; }, 0);
+        return '<div class="stack" style="gap:6px;">' +
+          '<div class="faint" style="font-weight:600; font-size:12px;">' + MEALS[mk] + ' · ' + Math.round(mealKcal) + ' kcal</div>' +
+          items.map(function(e){
+            return '<div class="card row between" style="padding:10px 14px;">' +
+              '<div><div style="font-weight:600; font-size:13.5px;">' + escapeAttr(e.dishName) + '</div>' +
+              '<div class="faint" style="font-size:11.5px;">' + round1(e.quantity) + ' ' + e.unit + ' · ' + Math.round(e.kcal) + ' kcal · ' + Math.round(e.protein) + ' g prot.</div></div>' +
+              '<button class="icon-btn" data-del-food="' + e.id + '"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
+            '</div>';
+          }).join("") +
         '</div>';
       }).join("") + '</div>';
     } else {
-      html += '<div class="empty">Rien d’enregistré aujourd’hui pour ' + escapeAttr(personName(pid)) + '.</div>';
+      html += '<div class="empty">Rien d’enregistré ' + (isToday?"aujourd’hui":"ce jour-là") + ' pour ' + escapeAttr(personName(pid)) + '.</div>';
+    }
+
+    html += '<div class="section-title">Tendance (14 derniers jours) — ' + escapeAttr(personName(pid)) + '</div>';
+    var kcalPoints = nutritionTrendPoints(pid, "kcal", 14);
+    var proteinPoints = nutritionTrendPoints(pid, "protein", 14);
+    if(kcalPoints.some(function(p){ return p.value>0; })){
+      html += '<div class="faint" style="font-size:11.5px;">Calories / jour</div>' +
+        '<div class="chart-wrap">' + renderLineChartSvg(kcalPoints, " kcal") + '</div>' +
+        '<div class="faint" style="font-size:11.5px;">Protéines / jour</div>' +
+        '<div class="chart-wrap">' + renderLineChartSvg(proteinPoints, " g") + '</div>';
+    } else {
+      html += '<div class="faint">Enregistre quelques repas pour voir la tendance.</div>';
     }
 
     html += '<div class="section-title">Mes plats</div>';
-    html += '<button class="btn btn-line btn-block" type="button" id="new-dish-btn">+ Nouveau plat</button>';
+    if(state.dishes.length){
+      var tags = state.dishes.reduce(function(acc,d){ if(d.tag && acc.indexOf(d.tag)===-1) acc.push(d.tag); return acc; }, []);
+      html += '<input type="text" id="dish-search" placeholder="Rechercher un plat…" value="' + escapeAttr(dishSearch) + '" style="width:100%;">';
+      if(tags.length){
+        html += '<div class="pill-group" style="margin-top:8px;">' +
+          '<button class="pill neutral' + (dishTagFilter==="all"?" active":"") + '" type="button" data-dish-tag-filter="all">Tous</button>' +
+          tags.map(function(t){
+            return '<button class="pill neutral' + (dishTagFilter===t?" active":"") + '" type="button" data-dish-tag-filter="' + escapeAttr(t) + '">' + escapeAttr(t) + '</button>';
+          }).join("") +
+        '</div>';
+      }
+    }
+    html += '<button class="btn btn-line btn-block" type="button" id="new-dish-btn" style="margin-top:8px;">+ Nouveau plat</button>';
     if(state.dishes.length){
       html += '<div class="stack" style="gap:8px;">' + state.dishes.map(function(d){
         var unitLabel = d.basis === "100g" ? "/ 100g" : "/ portion";
-        return '<div class="card" style="padding:12px 14px; cursor:pointer;" data-dish-card="' + d.id + '">' +
+        return '<div class="card" style="padding:12px 14px; cursor:pointer;" data-dish-card="' + d.id + '" data-dish-name="' + escapeAttr(d.name.toLowerCase()) + '" data-dish-tag="' + escapeAttr(d.tag||"") + '">' +
           '<div class="row between" style="align-items:center; gap:10px;">' +
             (d.photoThumb ? '<img src="' + d.photoThumb + '" style="width:44px; height:44px; border-radius:10px; object-fit:cover; flex-shrink:0;">' : '') +
             '<div style="flex:1; min-width:0;"><div style="font-weight:600; font-size:13.5px;">' + escapeAttr(d.name) + '</div>' +
@@ -2130,6 +2224,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
           '</div>' +
         '</div>';
       }).join("") + '</div>';
+      html += '<div class="empty" id="dish-empty-filtered" hidden>Aucun plat ne correspond à ta recherche.</div>';
     } else {
       html += '<div class="empty">Aucun plat enregistré — ajoute tes plats habituels pour les logger en un tap.</div>';
     }
@@ -2138,6 +2233,13 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
 
     $view.querySelectorAll("[data-person-select]").forEach(function(btn){
       btn.addEventListener("click", function(){ state.currentPerson = btn.getAttribute("data-person-select"); save(); renderNutrition(); });
+    });
+    document.getElementById("nutri-day-prev").addEventListener("click", function(){
+      nutritionViewDate.setDate(nutritionViewDate.getDate()-1); renderNutrition();
+    });
+    var nextBtn = document.getElementById("nutri-day-next");
+    if(!isToday) nextBtn.addEventListener("click", function(){
+      nutritionViewDate.setDate(nutritionViewDate.getDate()+1); renderNutrition();
     });
     $view.querySelectorAll("[data-del-food]").forEach(function(btn){
       btn.addEventListener("click", function(ev){
@@ -2164,6 +2266,32 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         }, true);
       });
     });
+
+    // Filtering the catalog happens in-place (show/hide already-rendered cards) rather than
+    // through a full renderNutrition() — re-rendering on every keystroke would rebuild
+    // #dish-search itself and drop focus/cursor position mid-typing.
+    function filterDishCards(){
+      var q = dishSearch.toLowerCase();
+      var anyVisible = false;
+      $view.querySelectorAll("[data-dish-card]").forEach(function(card){
+        var matches = (!q || card.getAttribute("data-dish-name").indexOf(q)!==-1) &&
+          (dishTagFilter==="all" || card.getAttribute("data-dish-tag")===dishTagFilter);
+        card.style.display = matches ? "" : "none";
+        if(matches) anyVisible = true;
+      });
+      var emptyEl = document.getElementById("dish-empty-filtered");
+      if(emptyEl) emptyEl.hidden = anyVisible;
+    }
+    var searchInput = document.getElementById("dish-search");
+    if(searchInput) searchInput.addEventListener("input", function(){ dishSearch = this.value; filterDishCards(); });
+    $view.querySelectorAll("[data-dish-tag-filter]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        dishTagFilter = btn.getAttribute("data-dish-tag-filter");
+        $view.querySelectorAll("[data-dish-tag-filter]").forEach(function(b){ b.classList.toggle("active", b===btn); });
+        filterDishCards();
+      });
+    });
+    filterDishCards();
   }
 
   // Downscales+recompresses an uploaded/captured photo client-side before it ever touches
@@ -2263,12 +2391,16 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     var unitLabel = isGrams ? "grammes" : "portions";
     var defaultQty = isGrams ? 100 : 1;
     var step = isGrams ? 10 : 0.5;
+    var selectedMeal = guessMealForNow();
 
     sheet.innerHTML = '<h2 class="disp">' + escapeAttr(dish.name) + '</h2>' +
       '<div class="stack" style="gap:10px; margin-bottom:18px;">' +
         '<label class="stack" style="gap:4px;"><span class="faint" style="font-size:12.5px;">Quantité (' + unitLabel + ')</span>' +
         '<input type="number" id="log-qty" min="0" step="' + step + '" value="' + defaultQty + '" style="width:100%;"></label>' +
         '<div class="faint" id="log-qty-preview"></div>' +
+        '<div class="pill-group">' + Object.keys(MEALS).map(function(mk){
+          return '<button class="pill neutral' + (mk===selectedMeal?" active":"") + '" type="button" data-meal-pick="' + mk + '">' + MEALS[mk] + '</button>';
+        }).join("") + '</div>' +
         '<button class="btn btn-ghost btn-sm" type="button" id="edit-dish-from-log" style="align-self:flex-start;">Modifier ce plat</button>' +
       '</div>' +
       '<div class="row" style="gap:10px;">' +
@@ -2285,13 +2417,24 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     }
     document.getElementById("log-qty").addEventListener("input", updatePreview);
     updatePreview();
+    sheet.querySelectorAll("[data-meal-pick]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        selectedMeal = btn.getAttribute("data-meal-pick");
+        sheet.querySelectorAll("[data-meal-pick]").forEach(function(b){ b.classList.toggle("active", b===btn); });
+      });
+    });
     document.getElementById("log-qty-cancel").addEventListener("click", function(){ closeOverlay(overlay, sheet); });
     document.getElementById("edit-dish-from-log").addEventListener("click", function(){ openDishModal(dishId); });
     document.getElementById("log-qty-confirm").addEventListener("click", function(){
       var qty = parseFloat(document.getElementById("log-qty").value) || 0;
       var scale = isGrams ? qty/100 : qty;
+      // Day = whichever day the journal is currently showing (nutritionViewDate, so logging
+      // while looking back at yesterday backdates correctly), time = right now.
+      var now = new Date();
+      var entryDate = new Date(nutritionViewDate);
+      entryDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
       state.foodLog.push({
-        id: uid(), personId: state.currentPerson || "p1", date: new Date().toISOString(),
+        id: uid(), personId: state.currentPerson || "p1", date: entryDate.toISOString(), meal: selectedMeal,
         dishName: dish.name, quantity: qty, unit: unitLabel,
         kcal: dish.kcal*scale, protein: dish.protein*scale,
         carbs: dish.carbs!=null ? dish.carbs*scale : null, fat: dish.fat!=null ? dish.fat*scale : null
