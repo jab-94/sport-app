@@ -595,7 +595,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b57";
+  var BUILD_VERSION = "b58";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -2414,20 +2414,30 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Logs a quantity of an existing dish into today's food diary for the current person —
   // scales the card's per-portion or per-100g macros by the quantity entered, and snapshots
   // the result (see the NUTRITION LOG comment above for why it's a snapshot, not a reference).
+  // You often eat the same dish together, so this logs for both of you in one go rather than
+  // making you repeat the whole flow per person. "Quantité globale" is a convenience that
+  // fills the two per-person fields 50/50 — editing either person's field afterward (uneven
+  // split, or only one of you actually had it) updates the total to match, never the other
+  // way round. A person left at 0 simply gets no entry.
   function openLogDishModal(dishId){
     var dish = state.dishes.find(function(d){ return d.id === dishId; });
     if(!dish) return;
     var overlay = document.getElementById("summary-overlay"), sheet = document.getElementById("summary-sheet");
     var isGrams = dish.basis === "100g";
     var unitLabel = isGrams ? "grammes" : "portions";
-    var defaultQty = isGrams ? 100 : 1;
+    var defaultTotal = isGrams ? 100 : 1;
     var step = isGrams ? 10 : 0.5;
     var selectedMeal = guessMealForNow();
+    var people = state.people;
 
     sheet.innerHTML = '<h2 class="disp">' + escapeAttr(dish.name) + '</h2>' +
       '<div class="stack" style="gap:10px; margin-bottom:18px;">' +
-        '<label class="stack" style="gap:4px;"><span class="faint" style="font-size:12.5px;">Quantité (' + unitLabel + ')</span>' +
-        '<input type="number" id="log-qty" min="0" step="' + step + '" value="' + defaultQty + '" style="width:100%;"></label>' +
+        '<label class="stack" style="gap:4px;"><span class="faint" style="font-size:12.5px;">Quantité globale (' + unitLabel + ')</span>' +
+        '<input type="number" id="log-qty-total" min="0" step="' + step + '" value="' + defaultTotal + '" style="width:100%;"></label>' +
+        '<div class="row" style="gap:8px;">' + people.map(function(pl){
+          return '<label class="stack" style="gap:4px; flex:1;"><span class="faint" style="font-size:12.5px;">' + escapeAttr(pl.name) + '</span>' +
+            '<input type="number" class="log-qty-person" data-person="' + pl.id + '" min="0" step="' + step + '" value="' + round1(defaultTotal/people.length) + '" style="width:100%;"></label>';
+        }).join("") + '</div>' +
         '<div class="faint" id="log-qty-preview"></div>' +
         '<div class="pill-group">' + Object.keys(MEALS).map(function(mk){
           return '<button class="pill neutral' + (mk===selectedMeal?" active":"") + '" type="button" data-meal-pick="' + mk + '">' + MEALS[mk] + '</button>';
@@ -2440,13 +2450,30 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       '</div>';
     overlay.classList.add("show");
 
+    var totalInput = document.getElementById("log-qty-total");
+    var personInputs = Array.prototype.slice.call(sheet.querySelectorAll(".log-qty-person"));
+    function scaleFor(qty){ return isGrams ? qty/100 : qty; }
     function updatePreview(){
-      var qty = parseFloat(document.getElementById("log-qty").value) || 0;
-      var scale = isGrams ? qty/100 : qty;
-      document.getElementById("log-qty-preview").textContent =
-        Math.round(dish.kcal*scale) + " kcal · " + Math.round(dish.protein*scale) + " g de protéines";
+      var lines = personInputs.map(function(inp){
+        var qty = parseFloat(inp.value) || 0;
+        if(qty <= 0) return null;
+        var scale = scaleFor(qty);
+        return escapeAttr(personName(inp.getAttribute("data-person"))) + " : " + Math.round(dish.kcal*scale) + " kcal · " + Math.round(dish.protein*scale) + " g prot.";
+      }).filter(Boolean);
+      document.getElementById("log-qty-preview").innerHTML = lines.length ? lines.join("<br>") : "Renseigne une quantité pour au moins une personne.";
     }
-    document.getElementById("log-qty").addEventListener("input", updatePreview);
+    totalInput.addEventListener("input", function(){
+      var half = (parseFloat(this.value) || 0) / personInputs.length;
+      personInputs.forEach(function(inp){ inp.value = round1(half); });
+      updatePreview();
+    });
+    personInputs.forEach(function(inp){
+      inp.addEventListener("input", function(){
+        var sum = personInputs.reduce(function(a,i){ return a + (parseFloat(i.value)||0); }, 0);
+        totalInput.value = round1(sum);
+        updatePreview();
+      });
+    });
     updatePreview();
     sheet.querySelectorAll("[data-meal-pick]").forEach(function(btn){
       btn.addEventListener("click", function(){
@@ -2457,19 +2484,25 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     document.getElementById("log-qty-cancel").addEventListener("click", function(){ closeOverlay(overlay, sheet); });
     document.getElementById("edit-dish-from-log").addEventListener("click", function(){ openDishModal(dishId); });
     document.getElementById("log-qty-confirm").addEventListener("click", function(){
-      var qty = parseFloat(document.getElementById("log-qty").value) || 0;
-      var scale = isGrams ? qty/100 : qty;
       // Day = whichever day the journal is currently showing (nutritionViewDate, so logging
       // while looking back at yesterday backdates correctly), time = right now.
       var now = new Date();
       var entryDate = new Date(nutritionViewDate);
       entryDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
-      state.foodLog.push({
-        id: uid(), personId: state.currentPerson || "p1", date: entryDate.toISOString(), meal: selectedMeal,
-        dishId: dish.id, dishName: dish.name, quantity: qty, unit: unitLabel,
-        kcal: dish.kcal*scale, protein: dish.protein*scale,
-        carbs: dish.carbs!=null ? dish.carbs*scale : null, fat: dish.fat!=null ? dish.fat*scale : null
+      var any = false;
+      personInputs.forEach(function(inp){
+        var qty = parseFloat(inp.value) || 0;
+        if(qty <= 0) return;
+        any = true;
+        var scale = scaleFor(qty);
+        state.foodLog.push({
+          id: uid(), personId: inp.getAttribute("data-person"), date: entryDate.toISOString(), meal: selectedMeal,
+          dishId: dish.id, dishName: dish.name, quantity: qty, unit: unitLabel,
+          kcal: dish.kcal*scale, protein: dish.protein*scale,
+          carbs: dish.carbs!=null ? dish.carbs*scale : null, fat: dish.fat!=null ? dish.fat*scale : null
+        });
       });
+      if(!any){ showAlert("Renseigne une quantité pour au moins une personne."); return; }
       save();
       closeOverlay(overlay, sheet);
       renderNutrition();
