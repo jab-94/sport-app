@@ -614,7 +614,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b69";
+  var BUILD_VERSION = "b70";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -2125,9 +2125,15 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       '<div style="font-weight:600; text-align:center; flex:1;">' + (isBurnToday ? "Aujourd’hui" : fmtDateFull(progressViewDate.toISOString())) + '</div>' +
       '<button class="icon-btn" type="button" id="prog-day-next" ' + (isBurnToday ? 'style="opacity:.3;" disabled' : '') + '><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>' +
     '</div>';
-    html += '<div class="section-title">Calories brûlées — ' + escapeAttr(personName(pid)) + '</div>';
+    html += '<div class="row between" style="align-items:center;">' +
+      '<div class="section-title" style="margin:0;">Calories brûlées — ' + escapeAttr(personName(pid)) + '</div>' +
+      '<div class="row" style="gap:5px; align-items:center; flex-shrink:0;">' +
+        '<span class="faint" style="font-size:11px;">Objectif</span>' +
+        '<input type="number" id="burn-goal-input" value="' + (burnGoal||"") + '" placeholder="kcal" min="0" step="10" style="width:56px; padding:5px 6px; font-size:12px; text-align:center;">' +
+        '<span class="faint" style="font-size:11px;">kcal/j</span>' +
+      '</div>' +
+    '</div>';
     html += '<div class="stat-grid">' + stat(Math.round(burnDayCal) + (burnGoal ? " / " + burnGoal : "") + " kcal", "Brûlées " + (isBurnToday?"aujourd’hui":"ce jour-là")) + '</div>';
-    if(!burnGoal) html += '<div class="faint">Renseigne un objectif de calories brûlées par jour dans Réglages pour voir ta progression.</div>';
     if(burnDaySessions.length){
       html += '<div class="stack" style="gap:6px;">' + burnDaySessions.map(function(s){
         return '<div class="card row between" style="padding:10px 14px;">' +
@@ -2206,6 +2212,16 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     var progNextBtn = document.getElementById("prog-day-next");
     if(!isBurnToday) progNextBtn.addEventListener("click", function(){
       progressViewDate.setDate(progressViewDate.getDate()+1); renderProgress();
+    });
+    document.getElementById("burn-goal-input").addEventListener("change", function(){
+      var v = parseInt(this.value, 10);
+      if(!state.bodyProfiles[pid]) state.bodyProfiles[pid] = {};
+      state.bodyProfiles[pid].burnGoal = (!isNaN(v) && v>0) ? v : null;
+      save();
+      // Deferred: a "change" event firing from blur (e.g. tapping the day-nav arrow right
+      // after) can still be mid-flight when this fires — replacing $view.innerHTML
+      // synchronously right here throws "node no longer a child" in that overlap.
+      setTimeout(renderProgress, 0);
     });
     var gotoSettingsBtn = document.getElementById("goto-settings-nutrition");
     if(gotoSettingsBtn) gotoSettingsBtn.addEventListener("click", function(){ state.currentTab = "settings"; render(); });
