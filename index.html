@@ -368,6 +368,13 @@ nav#tabs button.active svg{stroke:var(--accent);}
   background:var(--glass-bg); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
   border:1px solid var(--glass-border);
 }
+/* For a filter row whose pill count isn't fixed (workout types, dish tags) — flex:1 sharing
+   the row evenly (the default, right for 2-4 fixed choices like the person or meal picker)
+   would instead squeeze every label illegibly, and old overflow:hidden would just clip
+   whatever didn't fit. Scrolls horizontally instead, each pill sized to its own label. */
+.pill-group.scroll{ overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+.pill-group.scroll::-webkit-scrollbar{ display:none; }
+.pill-group.scroll .pill{ flex:0 0 auto; white-space:nowrap; }
 .pill{flex:1; text-align:center; padding:9px 6px; border-radius:12px; font-size:13px; font-weight:600; border:none; background:none; color:var(--ink-soft); transition:background .2s, color .2s;}
 .pill.active{background:rgba(255,255,255,.1); color:var(--p1); box-shadow:inset 0 1px 0 var(--glass-hi);}
 .pill.active.p2{color:var(--p2);}
@@ -595,7 +602,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b58";
+  var BUILD_VERSION = "b59";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -843,7 +850,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // CONTENT_VERSION/migrateContent: bumping it to add/refresh basics updates any of these
   // cards you haven't hand-edited (marked _custom, same convention as exercises), and never
   // duplicates or resurrects one you deleted outright.
-  var FOOD_CONTENT_VERSION = 3;
+  var FOOD_CONTENT_VERSION = 4;
   function defaultBasicFoods(){
     return [
       { id:"food-banane", name:"Banane (~120g)", basis:"portion", kcal:107, protein:1.3, carbs:27.4, fat:0.4, tag:"fruit" },
@@ -859,6 +866,11 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       // Pâtes sèches, non cuites — demandé explicitement "pour 100g" pour que tu tapes le
       // poids que tu pèses avant cuisson.
       { id:"food-pates", name:"Pâtes (sèches, non cuites)", basis:"100g", kcal:350, protein:12.5, carbs:71, fat:1.5, tag:"féculent" },
+      // Œufs : "par portion" avec une unité personnalisée ("œufs" au lieu de "portions") pour
+      // pouvoir taper directement le nombre d'œufs, y compris pour une omelette à plusieurs œufs.
+      { id:"food-oeuf-dur", name:"Œuf dur", basis:"portion", unit:"œufs", kcal:78, protein:6.3, carbs:0.6, fat:5.3, tag:"œuf" },
+      { id:"food-oeuf-plat", name:"Œuf au plat", basis:"portion", unit:"œufs", kcal:90, protein:6.3, carbs:0.4, fat:6.9, tag:"œuf" },
+      { id:"food-omelette", name:"Omelette (nature)", basis:"portion", unit:"œufs", kcal:95, protein:6.5, carbs:0.8, fat:7.2, tag:"œuf" },
     ];
   }
   function migrateBasicFoods(st){
@@ -875,6 +887,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       if(!existing._custom){
         existing.name = fd.name; existing.basis = fd.basis; existing.kcal = fd.kcal;
         existing.protein = fd.protein; existing.carbs = fd.carbs; existing.fat = fd.fat; existing.tag = fd.tag;
+        existing.unit = fd.unit || null;
       }
     });
     st.foodContentVersion = FOOD_CONTENT_VERSION;
@@ -1772,7 +1785,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     }
     var list = historyFilter==="all" ? all : all.filter(function(s){ return s.workoutId===historyFilter; });
     var html = '<div class="stack enter-anim" style="margin-top:6px;">';
-    html += '<div class="pill-group">' +
+    html += '<div class="pill-group scroll">' +
       '<button class="pill neutral' + (historyFilter==="all"?" active":"") + '" data-hist-filter="all">Tout</button>' +
       state.workouts.map(function(w){
         return '<button class="pill neutral' + (historyFilter===w.id?" active":"") + '" data-hist-filter="' + w.id + '">' + w.name + '</button>';
@@ -2225,7 +2238,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       var tags = state.dishes.reduce(function(acc,d){ if(d.tag && acc.indexOf(d.tag)===-1) acc.push(d.tag); return acc; }, []);
       html += '<input type="text" id="dish-search" placeholder="Rechercher un plat…" value="' + escapeAttr(dishSearch) + '" style="width:100%;">';
       if(tags.length){
-        html += '<div class="pill-group" style="margin-top:8px;">' +
+        html += '<div class="pill-group scroll" style="margin-top:8px;">' +
           '<button class="pill neutral' + (dishTagFilter==="all"?" active":"") + '" type="button" data-dish-tag-filter="all">Tous</button>' +
           tags.map(function(t){
             return '<button class="pill neutral' + (dishTagFilter===t?" active":"") + '" type="button" data-dish-tag-filter="' + escapeAttr(t) + '">' + escapeAttr(t) + '</button>';
@@ -2358,6 +2371,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
           '<label class="row" style="gap:5px;"><input type="radio" name="dish-basis" value="portion" ' + (!existing || existing.basis==="portion" ? "checked" : "") + '> Par portion</label>' +
           '<label class="row" style="gap:5px;"><input type="radio" name="dish-basis" value="100g" ' + (existing && existing.basis==="100g" ? "checked" : "") + '> Pour 100g</label>' +
         '</div>' +
+        '<input type="text" id="dish-unit" placeholder="Unité si « par portion » (optionnel, ex: œufs, tranches — sinon « portions »)" value="' + (existing && existing.unit ? escapeAttr(existing.unit) : "") + '" style="width:100%;">' +
         '<div class="row" style="gap:8px;">' +
           '<input type="number" id="dish-kcal" placeholder="kcal" min="0" step="1" value="' + (existing ? existing.kcal : "") + '" style="flex:1;">' +
           '<input type="number" id="dish-protein" placeholder="Protéines (g)" min="0" step="0.1" value="' + (existing ? existing.protein : "") + '" style="flex:1;">' +
@@ -2396,11 +2410,12 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       var carbsVal = parseFloat(document.getElementById("dish-carbs").value);
       var fatVal = parseFloat(document.getElementById("dish-fat").value);
       var tag = document.getElementById("dish-tag").value.trim();
+      var unit = document.getElementById("dish-unit").value.trim();
       var dish = existing || { id: uid(), createdAt: new Date().toISOString() };
       dish.name = name; dish.basis = basis; dish.kcal = kcal; dish.protein = protein;
       dish.carbs = isFinite(carbsVal) ? carbsVal : null;
       dish.fat = isFinite(fatVal) ? fatVal : null;
-      dish.tag = tag; dish.photoThumb = photoThumb;
+      dish.tag = tag; dish.photoThumb = photoThumb; dish.unit = unit || null;
       // Marks a hand-edited card so a future basic-foods refresh (migrateBasicFoods) never
       // overwrites your own numbers — same _custom convention as edited exercises.
       if(existing) dish._custom = true;
@@ -2424,7 +2439,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     if(!dish) return;
     var overlay = document.getElementById("summary-overlay"), sheet = document.getElementById("summary-sheet");
     var isGrams = dish.basis === "100g";
-    var unitLabel = isGrams ? "grammes" : "portions";
+    var unitLabel = isGrams ? "grammes" : (dish.unit || "portions");
     var defaultTotal = isGrams ? 100 : 1;
     var step = isGrams ? 10 : 0.5;
     var selectedMeal = guessMealForNow();
