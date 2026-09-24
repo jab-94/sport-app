@@ -323,14 +323,14 @@ nav#tabs button.active svg{stroke:var(--accent);}
 /* "Mes plats" — composite dishes get a bigger 2-up grid card (room for a photo, name always
    at least 2 lines tall) instead of the compact single-line list rows simple foods use. */
 .dish-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-.dish-card-big{ padding:0; display:flex; flex-direction:column; cursor:pointer; }
-.dish-card-big .thumb{ width:100%; height:84px; object-fit:cover; display:block; }
-.dish-card-big .body{ padding:10px 12px; flex:1; display:flex; flex-direction:column; gap:4px; min-height:56px; }
-.dish-card-big .body .head{ display:flex; align-items:flex-start; gap:6px; }
-.dish-card-big .body .name{ font-weight:600; font-size:13px; line-height:1.3; flex:1; min-width:0; }
-.dish-card-big .body .head .icon-btn{ width:24px; height:24px; }
-.dish-card-big .body .head .icon-btn svg{ width:12px; height:12px; }
-.dish-card-big .body .meta{ font-size:11px; margin-top:auto; }
+.dish-card-big{ padding:0; display:flex; flex-direction:column; cursor:pointer; transition:opacity .15s, transform .15s; }
+.dish-card-big .thumb{ width:100%; height:168px; object-fit:cover; display:block; }
+.dish-card-big .body{ padding:10px 12px; flex:1; display:flex; flex-direction:column; gap:4px; min-height:112px; }
+.dish-card-big .name{ font-weight:600; font-size:13px; line-height:1.3; }
+.dish-card-big .meta{ font-size:11px; margin-top:auto; }
+/* Hold-to-delete feedback (see attachLongPress): the dim+shrink itself takes as long as the
+   hold threshold, so releasing early just eases back with nothing having "happened" yet. */
+.card.pressing, .dish-card-big.pressing{ transition:opacity 4s linear, transform 4s linear; opacity:.4; transform:scale(.96); }
 .stack{display:flex; flex-direction:column; gap:12px;}
 .row{display:flex; align-items:center; gap:10px;}
 .between{justify-content:space-between;}
@@ -614,7 +614,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b65";
+  var BUILD_VERSION = "b66";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -1111,19 +1111,25 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   }
   function escapeAttr(s){ return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
 
-  // Long-press (hold ~500ms without moving) — the mobile equivalent of a right-click, used for
-  // the "skip this exercise" action so no permanent button has to sit on the card. Pointer
-  // events unify touch and mouse; a small movement tolerance cancels the press if it turns into
-  // a scroll, and the visible dimming while held is the only on-screen trace it leaves.
-  function attachLongPress(el, onLongPress){
+  // Long-press (hold without moving, default ~500ms) — the mobile equivalent of a right-click,
+  // used for the "skip this exercise" action so no permanent button has to sit on the card,
+  // and (with a longer thresholdMs) for deleting a dish card without a permanent "x" on it.
+  // Pointer events unify touch and mouse; a small movement tolerance cancels the press if it
+  // turns into a scroll, and the visible dimming while held is the only on-screen trace it
+  // leaves. Sets el._longPressFired when it fires, so a click handler sharing the same element
+  // (e.g. tap-to-log vs. hold-to-delete on a dish card) can tell the two apart and skip its own
+  // action on the click that follows the long-press release.
+  function attachLongPress(el, onLongPress, thresholdMs){
     var timer = null, startX = 0, startY = 0;
-    var THRESHOLD_MS = 500, MOVE_TOLERANCE = 10;
+    var THRESHOLD_MS = thresholdMs || 500, MOVE_TOLERANCE = 10;
     function clear(){ if(timer){ clearTimeout(timer); timer = null; } el.classList.remove("pressing"); }
     el.addEventListener("pointerdown", function(ev){
       if(ev.pointerType === "mouse" && ev.button !== 0) return;
       startX = ev.clientX; startY = ev.clientY;
       el.classList.add("pressing");
-      timer = setTimeout(function(){ timer = null; el.classList.remove("pressing"); onLongPress(); }, THRESHOLD_MS);
+      timer = setTimeout(function(){
+        timer = null; el.classList.remove("pressing"); el._longPressFired = true; onLongPress();
+      }, THRESHOLD_MS);
     });
     el.addEventListener("pointermove", function(ev){
       if(timer && (Math.abs(ev.clientX-startX) > MOVE_TOLERANCE || Math.abs(ev.clientY-startY) > MOVE_TOLERANCE)) clear();
@@ -2331,8 +2337,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
           return '<div class="card dish-card-big" data-dish-card="' + d.id + '" data-dish-name="' + escapeAttr(d.name.toLowerCase()) + '" data-dish-tag="' + escapeAttr(d.tag||"") + '">' +
             (d.photoThumb ? '<img class="thumb" src="' + d.photoThumb + '">' : '') +
             '<div class="body">' +
-              '<div class="head"><div class="name">' + escapeAttr(d.name) + '</div>' +
-              '<button class="icon-btn" type="button" data-del-dish="' + d.id + '"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>' +
+              '<div class="name">' + escapeAttr(d.name) + '</div>' +
               '<div class="faint meta">' + meta + '</div>' +
             '</div>' +
           '</div>';
@@ -2345,11 +2350,10 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
           var summary = Math.round(d.kcal) + ' kcal · ' + Math.round(d.protein) + ' g prot. ' + unitLabel;
           if(d.tag) summary += ' · ' + escapeAttr(d.tag);
           return '<div class="card" style="padding:12px 14px; cursor:pointer;" data-dish-card="' + d.id + '" data-dish-name="' + escapeAttr(d.name.toLowerCase()) + '" data-dish-tag="' + escapeAttr(d.tag||"") + '">' +
-            '<div class="row between" style="align-items:center; gap:10px;">' +
+            '<div class="row" style="align-items:center; gap:10px;">' +
               (d.photoThumb ? '<img src="' + d.photoThumb + '" style="width:44px; height:44px; border-radius:10px; object-fit:cover; flex-shrink:0;">' : '') +
               '<div style="flex:1; min-width:0;"><div style="font-weight:600; font-size:13.5px;">' + escapeAttr(d.name) + '</div>' +
               '<div class="faint" style="font-size:11.5px;">' + summary + '</div></div>' +
-              '<button class="icon-btn" type="button" data-del-dish="' + d.id + '" style="flex-shrink:0;"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
             '</div>' +
           '</div>';
         }).join("") + '</div>';
@@ -2386,21 +2390,23 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       });
     });
     document.getElementById("new-dish-btn").addEventListener("click", function(){ openDishModal(); });
+    // No permanent delete button on a dish card — a quick tap logs it, holding it down for
+    // 4s (attachLongPress) asks to delete instead. The click handler has to ignore the click
+    // that follows a long-press release, or logging would fire right after confirming delete.
     $view.querySelectorAll("[data-dish-card]").forEach(function(card){
-      card.addEventListener("click", function(ev){
-        if(ev.target.closest("[data-del-dish]")) return;
+      card.addEventListener("click", function(){
+        if(card._longPressFired){ card._longPressFired = false; return; }
         openLogDishModal(card.getAttribute("data-dish-card"));
       });
-    });
-    $view.querySelectorAll("[data-del-dish]").forEach(function(btn){
-      btn.addEventListener("click", function(ev){
-        ev.stopPropagation();
-        var id = btn.getAttribute("data-del-dish");
-        showConfirm("Supprimer ce plat ?", "Il sera retiré de tes plats — les entrées déjà enregistrées dans ton journal ne changent pas.", "Supprimer", function(){
+      attachLongPress(card, function(){
+        var id = card.getAttribute("data-dish-card");
+        var dish = state.dishes.find(function(d){ return d.id === id; });
+        if(!dish) return;
+        showConfirm("Supprimer « " + dish.name + " » ?", "Il sera retiré de tes plats — les entrées déjà enregistrées dans ton journal ne changent pas.", "Supprimer", function(){
           state.dishes = state.dishes.filter(function(d){ return d.id !== id; });
           save(); renderNutrition();
         }, true);
-      });
+      }, 4000);
     });
 
     // Filtering the catalog happens in-place (show/hide already-rendered cards) rather than
