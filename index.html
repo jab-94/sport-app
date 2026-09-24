@@ -614,7 +614,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b66";
+  var BUILD_VERSION = "b67";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -862,7 +862,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // CONTENT_VERSION/migrateContent: bumping it to add/refresh basics updates any of these
   // cards you haven't hand-edited (marked _custom, same convention as exercises), and never
   // duplicates or resurrects one you deleted outright.
-  var FOOD_CONTENT_VERSION = 9;
+  var FOOD_CONTENT_VERSION = 10;
   function defaultBasicFoods(){
     return [
       { id:"food-banane", name:"Banane (~120g)", basis:"portion", kcal:107, protein:1.3, carbs:27.4, fat:0.4, tag:"fruit" },
@@ -916,6 +916,9 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       { id:"food-barre-proteinee", name:"Barre protéinée (55g)", basis:"portion", kcal:231, protein:13, carbs:25, fat:8.8, tag:"produit" },
       // Idem : colonne "28g" de l'étiquette (1 portion = 1 gâteau).
       { id:"food-gateau-balconi", name:"Gâteau Balconi (28g)", basis:"portion", kcal:103, protein:1.4, carbs:16, fat:3.7, tag:"produit" },
+      // 1 tartine = ~40g de pain de campagne grillé + ~10g de beurre (valeurs de référence
+      // habituelles pour les deux) — corrige si ta tranche/couche de beurre diffère.
+      { id:"food-tartine-beurre", name:"Tartine de beurre (pain de campagne grillé)", basis:"portion", unit:"tartines", kcal:174, protein:3.5, carbs:20, fat:8.5, tag:"féculent" },
     ];
   }
   function migrateBasicFoods(st){
