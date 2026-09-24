@@ -602,7 +602,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b61";
+  var BUILD_VERSION = "b62";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -850,7 +850,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // CONTENT_VERSION/migrateContent: bumping it to add/refresh basics updates any of these
   // cards you haven't hand-edited (marked _custom, same convention as exercises), and never
   // duplicates or resurrects one you deleted outright.
-  var FOOD_CONTENT_VERSION = 6;
+  var FOOD_CONTENT_VERSION = 7;
   function defaultBasicFoods(){
     return [
       { id:"food-banane", name:"Banane (~120g)", basis:"portion", kcal:107, protein:1.3, carbs:27.4, fat:0.4, tag:"fruit" },
@@ -880,6 +880,15 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       // les valeurs de référence habituelles du thon au naturel en boîte (peu de matière
       // grasse, pas de glucides) — corrige-les si ton étiquette dit autre chose.
       { id:"food-thon-boite", name:"Boîte de thon (120g)", basis:"portion", unit:"boîtes", kcal:140, protein:33, carbs:0, fat:1.2, tag:"poisson" },
+      // Plat composite : riz basmati et brocolis (surgelés) pris sur les étiquettes que tu as
+      // envoyées, poulet (blanc, cru) estimé depuis les valeurs de référence habituelles (pas
+      // d'étiquette fournie) — corrige-le si besoin depuis la fiche du plat. Quantités par
+      // défaut telles que données ; ajustables à chaque log dans openLogCompositeDishModal.
+      { id:"food-riz-poulet-brocolis", name:"Riz basmati, poulet, brocolis", basis:"composite", tag:"plat", ingredients:[
+        { name:"Riz basmati (cru)", kcal:352, protein:8.6, carbs:76, fat:1.1, defaultQty:200 },
+        { name:"Poulet (blanc, cru)", kcal:110, protein:23, carbs:0, fat:1.5, defaultQty:440 },
+        { name:"Brocolis (surgelés)", kcal:29, protein:3.0, carbs:1.9, fat:0.5, defaultQty:360 }
+      ]},
     ];
   }
   function migrateBasicFoods(st){
@@ -894,9 +903,15 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         return;
       }
       if(!existing._custom){
-        existing.name = fd.name; existing.basis = fd.basis; existing.kcal = fd.kcal;
-        existing.protein = fd.protein; existing.carbs = fd.carbs; existing.fat = fd.fat; existing.tag = fd.tag;
-        existing.unit = fd.unit || null;
+        existing.name = fd.name; existing.basis = fd.basis; existing.tag = fd.tag;
+        if(fd.basis === "composite"){
+          existing.ingredients = JSON.parse(JSON.stringify(fd.ingredients));
+          delete existing.kcal; delete existing.protein; delete existing.carbs; delete existing.fat; delete existing.unit;
+        } else {
+          existing.kcal = fd.kcal; existing.protein = fd.protein; existing.carbs = fd.carbs; existing.fat = fd.fat;
+          existing.unit = fd.unit || null;
+          delete existing.ingredients;
+        }
       }
     });
     st.foodContentVersion = FOOD_CONTENT_VERSION;
@@ -2166,6 +2181,18 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     if(h < 19) return "collation";
     return "diner";
   }
+  // Sum of a composite dish's ingredients at their own default gram quantities — used for
+  // the "Mes plats" card summary. openLogCompositeDishModal computes the same thing but from
+  // whatever quantities are on screen at that moment, which may differ from these defaults.
+  function compositeDefaultTotal(dish){
+    var t = { kcal:0, protein:0, carbs:0, fat:0 };
+    dish.ingredients.forEach(function(ing){
+      var scale = (ing.defaultQty||0) / 100;
+      t.kcal += ing.kcal*scale; t.protein += ing.protein*scale;
+      t.carbs += (ing.carbs||0)*scale; t.fat += (ing.fat||0)*scale;
+    });
+    return t;
+  }
   // Daily totals for one macro field over the last `days` days (today inclusive), for the
   // trend charts — reuses renderLineChartSvg, the same line-chart helper as the body-weight
   // and exercise-load charts in Progrès.
@@ -2258,12 +2285,20 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     html += '<button class="btn btn-line btn-block" type="button" id="new-dish-btn" style="margin-top:8px;">+ Nouveau plat</button>';
     if(state.dishes.length){
       html += '<div class="stack" style="gap:8px;">' + state.dishes.map(function(d){
-        var unitLabel = d.basis === "100g" ? "/ 100g" : "/ portion";
+        var summary;
+        if(d.basis === "composite"){
+          var t = compositeDefaultTotal(d);
+          summary = Math.round(t.kcal) + ' kcal · ' + Math.round(t.protein) + ' g prot. (par défaut) · ' + d.ingredients.map(function(ing){ return ing.name; }).join(", ");
+        } else {
+          var unitLabel = d.basis === "100g" ? "/ 100g" : "/ portion";
+          summary = Math.round(d.kcal) + ' kcal · ' + Math.round(d.protein) + ' g prot. ' + unitLabel;
+        }
+        if(d.tag) summary += ' · ' + escapeAttr(d.tag);
         return '<div class="card" style="padding:12px 14px; cursor:pointer;" data-dish-card="' + d.id + '" data-dish-name="' + escapeAttr(d.name.toLowerCase()) + '" data-dish-tag="' + escapeAttr(d.tag||"") + '">' +
           '<div class="row between" style="align-items:center; gap:10px;">' +
             (d.photoThumb ? '<img src="' + d.photoThumb + '" style="width:44px; height:44px; border-radius:10px; object-fit:cover; flex-shrink:0;">' : '') +
             '<div style="flex:1; min-width:0;"><div style="font-weight:600; font-size:13.5px;">' + escapeAttr(d.name) + '</div>' +
-            '<div class="faint" style="font-size:11.5px;">' + Math.round(d.kcal) + ' kcal · ' + Math.round(d.protein) + ' g prot. ' + unitLabel + (d.tag ? ' · ' + escapeAttr(d.tag) : '') + '</div></div>' +
+            '<div class="faint" style="font-size:11.5px;">' + summary + '</div></div>' +
             '<button class="icon-btn" type="button" data-del-dish="' + d.id + '" style="flex-shrink:0;"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
           '</div>' +
         '</div>';
@@ -2368,71 +2403,182 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
 
   // Add-or-edit form for a meal card. Pass an existing dish's id to edit it in place; omit it
   // to create a new one.
+  // Add-or-edit form for a meal card. Three shapes: "portion" (fixed serving) and "100g"
+  // (scaled by grams eaten) are a single flat kcal/protein/carbs/fat; "composite" is a plate
+  // built from several ingredients (e.g. riz/poulet/brocolis), each with its own per-100g
+  // values and a default gram quantity — there's no single flat macro for the dish itself,
+  // only a total computed from its ingredients (see compositeDefaultTotal, and
+  // openLogCompositeDishModal for how logging lets you adjust those grams).
   function openDishModal(dishId){
     var existing = dishId ? state.dishes.find(function(d){ return d.id === dishId; }) : null;
     var overlay = document.getElementById("summary-overlay"), sheet = document.getElementById("summary-sheet");
     var photoThumb = existing ? existing.photoThumb : null;
+    var selectedBasis = existing ? existing.basis : "portion";
+    var ingredients = (existing && existing.basis === "composite")
+      ? JSON.parse(JSON.stringify(existing.ingredients))
+      : [{ name:"", kcal:0, protein:0, carbs:0, fat:0, defaultQty:100 }];
+    // Top-level fields, tracked outside the DOM the same way `ingredients` is — switching the
+    // basis radio (or add/remove-ingredient) rebuilds the whole sheet, and without this
+    // whatever you'd already typed into the name/tag/flat-macro fields would be silently
+    // discarded the moment you touched anything else.
+    var fields = {
+      name: existing ? existing.name : "",
+      tag: existing ? (existing.tag||"") : "",
+      unit: existing && existing.basis!=="composite" ? (existing.unit||"") : "",
+      kcal: existing && existing.basis!=="composite" ? existing.kcal : "",
+      protein: existing && existing.basis!=="composite" ? existing.protein : "",
+      carbs: existing && existing.basis!=="composite" && existing.carbs!=null ? existing.carbs : "",
+      fat: existing && existing.basis!=="composite" && existing.fat!=null ? existing.fat : ""
+    };
 
-    sheet.innerHTML = '<h2 class="disp">' + (existing ? "Modifier le plat" : "Nouveau plat") + '</h2>' +
-      '<div class="stack" style="gap:10px; margin-bottom:18px;">' +
-        '<input type="text" id="dish-name" placeholder="Nom du plat" value="' + (existing ? escapeAttr(existing.name) : "") + '" style="width:100%;">' +
-        '<div class="row" style="gap:14px; font-size:12.5px;">' +
-          '<label class="row" style="gap:5px;"><input type="radio" name="dish-basis" value="portion" ' + (!existing || existing.basis==="portion" ? "checked" : "") + '> Par portion</label>' +
-          '<label class="row" style="gap:5px;"><input type="radio" name="dish-basis" value="100g" ' + (existing && existing.basis==="100g" ? "checked" : "") + '> Pour 100g</label>' +
-        '</div>' +
-        '<input type="text" id="dish-unit" placeholder="Unité si « par portion » (optionnel, ex: œufs, tranches — sinon « portions »)" value="' + (existing && existing.unit ? escapeAttr(existing.unit) : "") + '" style="width:100%;">' +
-        '<div class="row" style="gap:8px;">' +
-          '<input type="number" id="dish-kcal" placeholder="kcal" min="0" step="1" value="' + (existing ? existing.kcal : "") + '" style="flex:1;">' +
-          '<input type="number" id="dish-protein" placeholder="Protéines (g)" min="0" step="0.1" value="' + (existing ? existing.protein : "") + '" style="flex:1;">' +
-        '</div>' +
-        '<div class="row" style="gap:8px;">' +
-          '<input type="number" id="dish-carbs" placeholder="Glucides (g, optionnel)" min="0" step="0.1" value="' + (existing && existing.carbs!=null ? existing.carbs : "") + '" style="flex:1;">' +
-          '<input type="number" id="dish-fat" placeholder="Lipides (g, optionnel)" min="0" step="0.1" value="' + (existing && existing.fat!=null ? existing.fat : "") + '" style="flex:1;">' +
-        '</div>' +
-        '<input type="text" id="dish-tag" placeholder="Tag (maison, resto, produit... optionnel)" value="' + (existing ? escapeAttr(existing.tag||"") : "") + '" style="width:100%;">' +
-        '<label class="stack" style="gap:6px;"><span class="faint" style="font-size:12.5px;">Photo (optionnel)</span>' +
-        '<input type="file" id="dish-photo" accept="image/*" capture="environment"></label>' +
-        '<img id="dish-photo-preview" src="' + (photoThumb||"") + '" style="' + (photoThumb?"":"display:none;") + ' width:100%; max-height:160px; object-fit:cover; border-radius:12px;">' +
-      '</div>' +
-      '<div class="row" style="gap:10px;">' +
-        '<button class="btn btn-ghost btn-block" id="dish-cancel">Annuler</button>' +
-        '<button class="btn btn-accent btn-block" id="dish-confirm">' + (existing ? "Enregistrer" : "Ajouter") + '</button>' +
-      '</div>';
-    overlay.classList.add("show");
-
-    document.getElementById("dish-photo").addEventListener("change", function(ev){
-      var file = ev.target.files[0]; if(!file) return;
-      compressImageToThumb(file, 160, function(dataUrl){
-        photoThumb = dataUrl;
-        var img = document.getElementById("dish-photo-preview");
-        img.src = dataUrl; img.style.display = "block";
+    // Pulls whatever's currently on screen back into `fields`/`ingredients` before a
+    // re-render (add row / remove row / switch basis) would otherwise throw those
+    // in-progress edits away.
+    function syncFormToLocals(){
+      var nameEl = document.getElementById("dish-name"); if(nameEl) fields.name = nameEl.value;
+      var tagEl = document.getElementById("dish-tag"); if(tagEl) fields.tag = tagEl.value;
+      var unitEl = document.getElementById("dish-unit"); if(unitEl) fields.unit = unitEl.value;
+      ["kcal","protein","carbs","fat"].forEach(function(f){
+        var el = document.getElementById("dish-" + f);
+        if(el) fields[f] = el.value;
       });
-    });
-    document.getElementById("dish-cancel").addEventListener("click", function(){ closeOverlay(overlay, sheet); });
-    document.getElementById("dish-confirm").addEventListener("click", function(){
-      var name = document.getElementById("dish-name").value.trim();
-      if(!name){ showAlert("Donne un nom au plat."); return; }
-      var kcal = parseFloat(document.getElementById("dish-kcal").value);
-      var protein = parseFloat(document.getElementById("dish-protein").value);
-      if(!isFinite(kcal) || !isFinite(protein)){ showAlert("Renseigne au moins les calories et les protéines."); return; }
-      var basis = (sheet.querySelector('input[name="dish-basis"]:checked')||{}).value || "portion";
-      var carbsVal = parseFloat(document.getElementById("dish-carbs").value);
-      var fatVal = parseFloat(document.getElementById("dish-fat").value);
-      var tag = document.getElementById("dish-tag").value.trim();
-      var unit = document.getElementById("dish-unit").value.trim();
-      var dish = existing || { id: uid(), createdAt: new Date().toISOString() };
-      dish.name = name; dish.basis = basis; dish.kcal = kcal; dish.protein = protein;
-      dish.carbs = isFinite(carbsVal) ? carbsVal : null;
-      dish.fat = isFinite(fatVal) ? fatVal : null;
-      dish.tag = tag; dish.photoThumb = photoThumb; dish.unit = unit || null;
-      // Marks a hand-edited card so a future basic-foods refresh (migrateBasicFoods) never
-      // overwrites your own numbers — same _custom convention as edited exercises.
-      if(existing) dish._custom = true;
-      if(!existing) state.dishes.push(dish);
-      save();
-      closeOverlay(overlay, sheet);
-      renderNutrition();
-    });
+      ingredients.forEach(function(ing, i){
+        var ingNameEl = sheet.querySelector('[data-ing-name="' + i + '"]');
+        if(ingNameEl) ing.name = ingNameEl.value;
+        ["kcal","protein","carbs","fat"].forEach(function(f){
+          var el = sheet.querySelector('[data-ing-' + f + '="' + i + '"]');
+          if(el) ing[f] = parseFloat(el.value) || 0;
+        });
+        var qtyEl = sheet.querySelector('[data-ing-qty="' + i + '"]');
+        if(qtyEl) ing.defaultQty = parseFloat(qtyEl.value) || 0;
+      });
+    }
+
+    function renderForm(){
+      var html = '<h2 class="disp">' + (existing ? "Modifier le plat" : "Nouveau plat") + '</h2>' +
+        '<div class="stack" style="gap:10px; margin-bottom:18px;">' +
+          '<input type="text" id="dish-name" placeholder="Nom du plat" value="' + escapeAttr(fields.name) + '" style="width:100%;">' +
+          '<div class="row" style="gap:14px; font-size:12.5px; flex-wrap:wrap;">' +
+            '<label class="row" style="gap:5px;"><input type="radio" name="dish-basis" value="portion" ' + (selectedBasis==="portion"?"checked":"") + '> Par portion</label>' +
+            '<label class="row" style="gap:5px;"><input type="radio" name="dish-basis" value="100g" ' + (selectedBasis==="100g"?"checked":"") + '> Pour 100g</label>' +
+            '<label class="row" style="gap:5px;"><input type="radio" name="dish-basis" value="composite" ' + (selectedBasis==="composite"?"checked":"") + '> Plusieurs ingrédients</label>' +
+          '</div>';
+
+      if(selectedBasis === "composite"){
+        html += '<div class="faint" style="font-size:11.5px;">Un plat composé de plusieurs aliments, chacun avec sa propre quantité par défaut (modifiable au moment de logger).</div>';
+        ingredients.forEach(function(ing, i){
+          html += '<div class="card" style="padding:12px;">' +
+            '<div class="row" style="gap:8px; margin-bottom:8px;">' +
+              '<input type="text" data-ing-name="' + i + '" value="' + escapeAttr(ing.name) + '" placeholder="Nom de l’ingrédient" style="flex:1;">' +
+              '<button class="icon-btn" type="button" data-remove-ing="' + i + '"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
+            '</div>' +
+            '<div class="row" style="gap:8px; margin-bottom:6px;">' +
+              '<input type="number" data-ing-kcal="' + i + '" placeholder="kcal /100g" min="0" step="1" value="' + (ing.kcal||"") + '" style="flex:1;">' +
+              '<input type="number" data-ing-protein="' + i + '" placeholder="Protéines /100g" min="0" step="0.1" value="' + (ing.protein||"") + '" style="flex:1;">' +
+            '</div>' +
+            '<div class="row" style="gap:8px; margin-bottom:6px;">' +
+              '<input type="number" data-ing-carbs="' + i + '" placeholder="Glucides /100g" min="0" step="0.1" value="' + (ing.carbs||"") + '" style="flex:1;">' +
+              '<input type="number" data-ing-fat="' + i + '" placeholder="Lipides /100g" min="0" step="0.1" value="' + (ing.fat||"") + '" style="flex:1;">' +
+            '</div>' +
+            '<label class="stack" style="gap:4px;"><span class="faint" style="font-size:11.5px;">Quantité par défaut (g)</span>' +
+            '<input type="number" data-ing-qty="' + i + '" min="0" step="10" value="' + (ing.defaultQty||"") + '" style="width:100%;"></label>' +
+          '</div>';
+        });
+        html += '<button class="btn btn-line btn-block" type="button" id="add-ingredient-btn">+ Ajouter un ingrédient</button>';
+      } else {
+        html += '<input type="text" id="dish-unit" placeholder="Unité si « par portion » (optionnel, ex: œufs, tranches — sinon « portions »)" value="' + escapeAttr(fields.unit) + '" style="width:100%;">' +
+          '<div class="row" style="gap:8px;">' +
+            '<input type="number" id="dish-kcal" placeholder="kcal" min="0" step="1" value="' + escapeAttr(fields.kcal) + '" style="flex:1;">' +
+            '<input type="number" id="dish-protein" placeholder="Protéines (g)" min="0" step="0.1" value="' + escapeAttr(fields.protein) + '" style="flex:1;">' +
+          '</div>' +
+          '<div class="row" style="gap:8px;">' +
+            '<input type="number" id="dish-carbs" placeholder="Glucides (g, optionnel)" min="0" step="0.1" value="' + escapeAttr(fields.carbs) + '" style="flex:1;">' +
+            '<input type="number" id="dish-fat" placeholder="Lipides (g, optionnel)" min="0" step="0.1" value="' + escapeAttr(fields.fat) + '" style="flex:1;">' +
+          '</div>';
+      }
+
+      html += '<input type="text" id="dish-tag" placeholder="Tag (maison, resto, produit... optionnel)" value="' + escapeAttr(fields.tag) + '" style="width:100%;">' +
+          '<label class="stack" style="gap:6px;"><span class="faint" style="font-size:12.5px;">Photo (optionnel)</span>' +
+          '<input type="file" id="dish-photo" accept="image/*" capture="environment"></label>' +
+          '<img id="dish-photo-preview" src="' + (photoThumb||"") + '" style="' + (photoThumb?"":"display:none;") + ' width:100%; max-height:160px; object-fit:cover; border-radius:12px;">' +
+        '</div>' +
+        '<div class="row" style="gap:10px;">' +
+          '<button class="btn btn-ghost btn-block" id="dish-cancel">Annuler</button>' +
+          '<button class="btn btn-accent btn-block" id="dish-confirm">' + (existing ? "Enregistrer" : "Ajouter") + '</button>' +
+        '</div>';
+      sheet.innerHTML = html;
+
+      sheet.querySelectorAll('input[name="dish-basis"]').forEach(function(radio){
+        radio.addEventListener("change", function(){
+          syncFormToLocals();
+          selectedBasis = this.value;
+          if(selectedBasis === "composite" && !ingredients.length){
+            ingredients.push({ name:"", kcal:0, protein:0, carbs:0, fat:0, defaultQty:100 });
+          }
+          renderForm();
+        });
+      });
+      document.getElementById("dish-photo").addEventListener("change", function(ev){
+        var file = ev.target.files[0]; if(!file) return;
+        compressImageToThumb(file, 160, function(dataUrl){
+          photoThumb = dataUrl;
+          var img = document.getElementById("dish-photo-preview");
+          img.src = dataUrl; img.style.display = "block";
+        });
+      });
+      document.getElementById("dish-cancel").addEventListener("click", function(){ closeOverlay(overlay, sheet); });
+      if(selectedBasis === "composite"){
+        sheet.querySelectorAll("[data-remove-ing]").forEach(function(btn){
+          btn.addEventListener("click", function(){
+            syncFormToLocals();
+            ingredients.splice(+btn.getAttribute("data-remove-ing"), 1);
+            renderForm();
+          });
+        });
+        document.getElementById("add-ingredient-btn").addEventListener("click", function(){
+          syncFormToLocals();
+          ingredients.push({ name:"", kcal:0, protein:0, carbs:0, fat:0, defaultQty:100 });
+          renderForm();
+        });
+      }
+      document.getElementById("dish-confirm").addEventListener("click", function(){
+        syncFormToLocals();
+        var name = fields.name.trim();
+        if(!name){ showAlert("Donne un nom au plat."); return; }
+        var tag = fields.tag.trim();
+        var dish = existing || { id: uid(), createdAt: new Date().toISOString() };
+
+        if(selectedBasis === "composite"){
+          var cleanIngredients = ingredients.filter(function(ing){ return ing.name && ing.name.trim(); });
+          if(!cleanIngredients.length){ showAlert("Ajoute au moins un ingrédient nommé."); return; }
+          dish.basis = "composite"; dish.ingredients = cleanIngredients;
+          delete dish.kcal; delete dish.protein; delete dish.carbs; delete dish.fat; delete dish.unit;
+        } else {
+          var kcal = parseFloat(fields.kcal);
+          var protein = parseFloat(fields.protein);
+          if(!isFinite(kcal) || !isFinite(protein)){ showAlert("Renseigne au moins les calories et les protéines."); return; }
+          var carbsVal = parseFloat(fields.carbs);
+          var fatVal = parseFloat(fields.fat);
+          var unit = fields.unit.trim();
+          dish.basis = selectedBasis; dish.kcal = kcal; dish.protein = protein;
+          dish.carbs = isFinite(carbsVal) ? carbsVal : null;
+          dish.fat = isFinite(fatVal) ? fatVal : null;
+          dish.unit = unit || null;
+          delete dish.ingredients;
+        }
+        dish.name = name; dish.tag = tag; dish.photoThumb = photoThumb;
+        // Marks a hand-edited card so a future basic-foods refresh (migrateBasicFoods) never
+        // overwrites your own numbers — same _custom convention as edited exercises.
+        if(existing) dish._custom = true;
+        if(!existing) state.dishes.push(dish);
+        save();
+        closeOverlay(overlay, sheet);
+        renderNutrition();
+      });
+    }
+
+    overlay.classList.add("show");
+    renderForm();
   }
 
   // Logs a quantity of an existing dish into today's food diary for the current person —
@@ -2446,6 +2592,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   function openLogDishModal(dishId){
     var dish = state.dishes.find(function(d){ return d.id === dishId; });
     if(!dish) return;
+    if(dish.basis === "composite") return openLogCompositeDishModal(dishId);
     var overlay = document.getElementById("summary-overlay"), sheet = document.getElementById("summary-sheet");
     var isGrams = dish.basis === "100g";
     var unitLabel = isGrams ? "grammes" : (dish.unit || "portions");
@@ -2533,6 +2680,116 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     });
   }
 
+  // Composite dishes (several ingredients, e.g. riz/poulet/brocolis) don't have a single
+  // per-unit kcal to scale — each ingredient has its own per-100g values and a default gram
+  // quantity instead. This lets you adjust those grams (defaults pre-filled from the dish),
+  // computes the resulting plate total live, then hands off into the exact same quantité
+  // globale/Am/Jab split as any other dish — from that point on it behaves like a "per
+  // portion" log where 1 portion is this specific plate as just adjusted.
+  function openLogCompositeDishModal(dishId){
+    var dish = state.dishes.find(function(d){ return d.id === dishId; });
+    if(!dish) return;
+    var overlay = document.getElementById("summary-overlay"), sheet = document.getElementById("summary-sheet");
+    var selectedMeal = guessMealForNow();
+    var people = state.people;
+
+    sheet.innerHTML = '<h2 class="disp">' + escapeAttr(dish.name) + '</h2>' +
+      '<div class="stack" style="gap:10px; margin-bottom:18px;">' +
+        '<div class="faint" style="font-size:11.5px;">Ajuste les quantités si besoin (par défaut ci-dessous).</div>' +
+        dish.ingredients.map(function(ing, i){
+          return '<label class="stack" style="gap:4px;"><span class="faint" style="font-size:12.5px;">' + escapeAttr(ing.name) + ' (g)</span>' +
+            '<input type="number" class="ing-qty-input" data-ing="' + i + '" min="0" step="10" value="' + ing.defaultQty + '" style="width:100%;"></label>';
+        }).join("") +
+        '<div class="card" style="padding:10px 14px;"><div class="faint" style="font-size:11.5px;">Total de l’assiette (aux quantités ci-dessus)</div>' +
+        '<div id="composite-total" style="font-weight:700;"></div></div>' +
+        '<label class="stack" style="gap:4px; margin-top:2px;"><span class="faint" style="font-size:12.5px;">Quantité globale (portions de cette assiette)</span>' +
+        '<input type="number" id="log-qty-total" min="0" step="0.5" value="1" style="width:100%;"></label>' +
+        '<div class="row" style="gap:8px;">' + people.map(function(pl){
+          return '<label class="stack" style="gap:4px; flex:1;"><span class="faint" style="font-size:12.5px;">' + escapeAttr(pl.name) + '</span>' +
+            '<input type="number" class="log-qty-person" data-person="' + pl.id + '" min="0" step="0.5" value="' + round1(1/people.length) + '" style="width:100%;"></label>';
+        }).join("") + '</div>' +
+        '<div class="faint" id="log-qty-preview"></div>' +
+        '<div class="pill-group">' + Object.keys(MEALS).map(function(mk){
+          return '<button class="pill neutral' + (mk===selectedMeal?" active":"") + '" type="button" data-meal-pick="' + mk + '">' + MEALS[mk] + '</button>';
+        }).join("") + '</div>' +
+        '<button class="btn btn-ghost btn-sm" type="button" id="edit-dish-from-log" style="align-self:flex-start;">Modifier ce plat</button>' +
+      '</div>' +
+      '<div class="row" style="gap:10px;">' +
+        '<button class="btn btn-ghost btn-block" id="log-qty-cancel">Annuler</button>' +
+        '<button class="btn btn-accent btn-block" id="log-qty-confirm">Ajouter</button>' +
+      '</div>';
+    overlay.classList.add("show");
+
+    var ingInputs = Array.prototype.slice.call(sheet.querySelectorAll(".ing-qty-input"));
+    var totalInput = document.getElementById("log-qty-total");
+    var personInputs = Array.prototype.slice.call(sheet.querySelectorAll(".log-qty-person"));
+
+    function computeTotal(){
+      var t = { kcal:0, protein:0, carbs:0, fat:0 };
+      ingInputs.forEach(function(inp){
+        var ing = dish.ingredients[+inp.getAttribute("data-ing")];
+        var scale = (parseFloat(inp.value)||0) / 100;
+        t.kcal += ing.kcal*scale; t.protein += ing.protein*scale;
+        t.carbs += (ing.carbs||0)*scale; t.fat += (ing.fat||0)*scale;
+      });
+      return t;
+    }
+    function updatePreview(){
+      var total = computeTotal();
+      document.getElementById("composite-total").textContent = Math.round(total.kcal) + " kcal · " + Math.round(total.protein) + " g prot.";
+      var lines = personInputs.map(function(inp){
+        var qty = parseFloat(inp.value) || 0;
+        if(qty <= 0) return null;
+        return escapeAttr(personName(inp.getAttribute("data-person"))) + " : " + Math.round(total.kcal*qty) + " kcal · " + Math.round(total.protein*qty) + " g prot.";
+      }).filter(Boolean);
+      document.getElementById("log-qty-preview").innerHTML = lines.length ? lines.join("<br>") : "Renseigne une quantité pour au moins une personne.";
+    }
+    ingInputs.forEach(function(inp){ inp.addEventListener("input", updatePreview); });
+    totalInput.addEventListener("input", function(){
+      var half = (parseFloat(this.value) || 0) / personInputs.length;
+      personInputs.forEach(function(inp){ inp.value = round1(half); });
+      updatePreview();
+    });
+    personInputs.forEach(function(inp){
+      inp.addEventListener("input", function(){
+        var sum = personInputs.reduce(function(a,i){ return a + (parseFloat(i.value)||0); }, 0);
+        totalInput.value = round1(sum);
+        updatePreview();
+      });
+    });
+    updatePreview();
+
+    sheet.querySelectorAll("[data-meal-pick]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        selectedMeal = btn.getAttribute("data-meal-pick");
+        sheet.querySelectorAll("[data-meal-pick]").forEach(function(b){ b.classList.toggle("active", b===btn); });
+      });
+    });
+    document.getElementById("log-qty-cancel").addEventListener("click", function(){ closeOverlay(overlay, sheet); });
+    document.getElementById("edit-dish-from-log").addEventListener("click", function(){ openDishModal(dishId); });
+    document.getElementById("log-qty-confirm").addEventListener("click", function(){
+      var total = computeTotal();
+      var now = new Date();
+      var entryDate = new Date(nutritionViewDate);
+      entryDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+      var any = false;
+      personInputs.forEach(function(inp){
+        var qty = parseFloat(inp.value) || 0;
+        if(qty <= 0) return;
+        any = true;
+        state.foodLog.push({
+          id: uid(), personId: inp.getAttribute("data-person"), date: entryDate.toISOString(), meal: selectedMeal,
+          dishId: dish.id, dishName: dish.name, quantity: qty, unit: "portions",
+          kcal: total.kcal*qty, protein: total.protein*qty, carbs: total.carbs*qty, fat: total.fat*qty
+        });
+      });
+      if(!any){ showAlert("Renseigne une quantité pour au moins une personne."); return; }
+      save();
+      closeOverlay(overlay, sheet);
+      renderNutrition();
+    });
+  }
+
   // Corrects an already-logged entry (wrong quantity, wrong meal, a typo'd value...) in place
   // — the entry itself stays the source of truth (see the NUTRITION LOG comment above), this
   // just edits that snapshot directly rather than deleting and re-logging it. When the entry
@@ -2544,7 +2801,10 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     var entry = state.foodLog.find(function(e){ return e.id === entryId; });
     if(!entry) return;
     var overlay = document.getElementById("summary-overlay"), sheet = document.getElementById("summary-sheet");
-    var linkedDish = entry.dishId ? state.dishes.find(function(d){ return d.id === entry.dishId; }) : null;
+    // A composite dish (several ingredients) has no single flat kcal to scale by, so it's
+    // treated the same as a deleted/missing dish here: kcal/protein stay directly editable
+    // instead of auto-recomputing from a quantity.
+    var linkedDish = entry.dishId ? state.dishes.find(function(d){ return d.id === entry.dishId && d.basis !== "composite"; }) : null;
     var isGrams = entry.unit === "grammes";
     var selectedMeal = entry.meal || "collation";
 
