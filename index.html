@@ -319,6 +319,18 @@ nav#tabs button.active svg{stroke:var(--accent);}
   border:1px solid var(--glass-border); border-radius:20px; overflow:hidden;
   padding:16px; box-shadow:var(--shadow), inset 0 1px 0 var(--glass-hi);
 }
+
+/* "Mes plats" — composite dishes get a bigger 2-up grid card (room for a photo, name always
+   at least 2 lines tall) instead of the compact single-line list rows simple foods use. */
+.dish-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.dish-card-big{ padding:0; display:flex; flex-direction:column; cursor:pointer; }
+.dish-card-big .thumb{ width:100%; height:84px; object-fit:cover; display:block; }
+.dish-card-big .body{ padding:10px 12px; flex:1; display:flex; flex-direction:column; gap:4px; min-height:56px; }
+.dish-card-big .body .head{ display:flex; align-items:flex-start; gap:6px; }
+.dish-card-big .body .name{ font-weight:600; font-size:13px; line-height:1.3; flex:1; min-width:0; }
+.dish-card-big .body .head .icon-btn{ width:24px; height:24px; }
+.dish-card-big .body .head .icon-btn svg{ width:12px; height:12px; }
+.dish-card-big .body .meta{ font-size:11px; margin-top:auto; }
 .stack{display:flex; flex-direction:column; gap:12px;}
 .row{display:flex; align-items:center; gap:10px;}
 .between{justify-content:space-between;}
@@ -602,7 +614,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b63";
+  var BUILD_VERSION = "b64";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -2179,6 +2191,13 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // snapshots the computed totals into foodLog rather than storing a live reference to the
   // dish, so editing or deleting a card later never rewrites what was actually eaten that day.
   var MEALS = { petitdej:"Petit déjeuner", dejeuner:"Déjeuner", collation:"Collation", diner:"Dîner" };
+  // Fixed display/filter order for "Mes plats" tags — anything not listed here (an unknown
+  // tag, or none at all) sorts after all of these, in whatever order it was already in.
+  var DISH_TAG_ORDER = ["plat", "produit", "fruit", "légume", "féculent", "viande", "poisson"];
+  function dishTagRank(tag){
+    var i = DISH_TAG_ORDER.indexOf(tag);
+    return i === -1 ? DISH_TAG_ORDER.length : i;
+  }
   // Which day the journal (and any new log entry) currently points at — resets to today on
   // reload, like historyFilter/settingsOpen elsewhere. Navigating back a day lets you log a
   // meal you forgot yesterday, the same spirit as editing a past session in Historique.
@@ -2281,8 +2300,9 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     }
 
     html += '<div class="section-title">Mes plats</div>';
+    var sortedDishes = state.dishes.slice().sort(function(a,b){ return dishTagRank(a.tag) - dishTagRank(b.tag); });
     if(state.dishes.length){
-      var tags = state.dishes.reduce(function(acc,d){ if(d.tag && acc.indexOf(d.tag)===-1) acc.push(d.tag); return acc; }, []);
+      var tags = sortedDishes.reduce(function(acc,d){ if(d.tag && acc.indexOf(d.tag)===-1) acc.push(d.tag); return acc; }, []);
       html += '<input type="text" id="dish-search" placeholder="Rechercher un plat…" value="' + escapeAttr(dishSearch) + '" style="width:100%;">';
       if(tags.length){
         html += '<div class="pill-group scroll" style="margin-top:8px;">' +
@@ -2295,25 +2315,41 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     }
     html += '<button class="btn btn-line btn-block" type="button" id="new-dish-btn" style="margin-top:8px;">+ Nouveau plat</button>';
     if(state.dishes.length){
-      html += '<div class="stack" style="gap:8px;">' + state.dishes.map(function(d){
-        var summary;
-        if(d.basis === "composite"){
+      // Composite dishes ("plats") get the bigger 2-up grid card, with room for a photo —
+      // simple foods (fruit, produit, viande...) stay in the compact single-line list below.
+      var compositeDishes = sortedDishes.filter(function(d){ return d.basis === "composite"; });
+      var otherDishes = sortedDishes.filter(function(d){ return d.basis !== "composite"; });
+
+      if(compositeDishes.length){
+        html += '<div class="dish-grid" id="dish-grid-plats">' + compositeDishes.map(function(d){
           var t = compositeDefaultTotal(d);
-          summary = Math.round(t.kcal) + ' kcal · ' + Math.round(t.protein) + ' g prot. (par défaut) · ' + d.ingredients.map(function(ing){ return ing.name; }).join(", ");
-        } else {
+          var meta = Math.round(t.kcal) + ' kcal · ' + Math.round(t.protein) + ' g prot.';
+          return '<div class="card dish-card-big" data-dish-card="' + d.id + '" data-dish-name="' + escapeAttr(d.name.toLowerCase()) + '" data-dish-tag="' + escapeAttr(d.tag||"") + '">' +
+            (d.photoThumb ? '<img class="thumb" src="' + d.photoThumb + '">' : '') +
+            '<div class="body">' +
+              '<div class="head"><div class="name">' + escapeAttr(d.name) + '</div>' +
+              '<button class="icon-btn" type="button" data-del-dish="' + d.id + '"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>' +
+              '<div class="faint meta">' + meta + '</div>' +
+            '</div>' +
+          '</div>';
+        }).join("") + '</div>';
+      }
+
+      if(otherDishes.length){
+        html += '<div class="stack" style="gap:8px; margin-top:' + (compositeDishes.length?"8px":"0") + ';">' + otherDishes.map(function(d){
           var unitLabel = d.basis === "100g" ? "/ 100g" : "/ portion";
-          summary = Math.round(d.kcal) + ' kcal · ' + Math.round(d.protein) + ' g prot. ' + unitLabel;
-        }
-        if(d.tag) summary += ' · ' + escapeAttr(d.tag);
-        return '<div class="card" style="padding:12px 14px; cursor:pointer;" data-dish-card="' + d.id + '" data-dish-name="' + escapeAttr(d.name.toLowerCase()) + '" data-dish-tag="' + escapeAttr(d.tag||"") + '">' +
-          '<div class="row between" style="align-items:center; gap:10px;">' +
-            (d.photoThumb ? '<img src="' + d.photoThumb + '" style="width:44px; height:44px; border-radius:10px; object-fit:cover; flex-shrink:0;">' : '') +
-            '<div style="flex:1; min-width:0;"><div style="font-weight:600; font-size:13.5px;">' + escapeAttr(d.name) + '</div>' +
-            '<div class="faint" style="font-size:11.5px;">' + summary + '</div></div>' +
-            '<button class="icon-btn" type="button" data-del-dish="' + d.id + '" style="flex-shrink:0;"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
-          '</div>' +
-        '</div>';
-      }).join("") + '</div>';
+          var summary = Math.round(d.kcal) + ' kcal · ' + Math.round(d.protein) + ' g prot. ' + unitLabel;
+          if(d.tag) summary += ' · ' + escapeAttr(d.tag);
+          return '<div class="card" style="padding:12px 14px; cursor:pointer;" data-dish-card="' + d.id + '" data-dish-name="' + escapeAttr(d.name.toLowerCase()) + '" data-dish-tag="' + escapeAttr(d.tag||"") + '">' +
+            '<div class="row between" style="align-items:center; gap:10px;">' +
+              (d.photoThumb ? '<img src="' + d.photoThumb + '" style="width:44px; height:44px; border-radius:10px; object-fit:cover; flex-shrink:0;">' : '') +
+              '<div style="flex:1; min-width:0;"><div style="font-weight:600; font-size:13.5px;">' + escapeAttr(d.name) + '</div>' +
+              '<div class="faint" style="font-size:11.5px;">' + summary + '</div></div>' +
+              '<button class="icon-btn" type="button" data-del-dish="' + d.id + '" style="flex-shrink:0;"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
+            '</div>' +
+          '</div>';
+        }).join("") + '</div>';
+      }
       html += '<div class="empty" id="dish-empty-filtered" hidden>Aucun plat ne correspond à ta recherche.</div>';
     } else {
       html += '<div class="empty">Aucun plat enregistré — ajoute tes plats habituels pour les logger en un tap.</div>';
