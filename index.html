@@ -610,11 +610,11 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
 (function(){
   "use strict";
   var STORAGE_KEY = "carnet-fonte-v2";
-  var CONTENT_VERSION = 12; // bump this whenever the built-in exercise data below changes
+  var CONTENT_VERSION = 13; // bump this whenever the built-in exercise data below changes
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b67";
+  var BUILD_VERSION = "b68";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -777,6 +777,13 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         // the iframe or a plain <video>.
         { id:"cours-fessiers", name:"Cours focus fessiers", met:4.5, location:"maison", type:"video",
           videoId:"6hOAGDbkLOw", videoDurationMin:10, exercises:[] },
+        // "quicklog" workouts (location "sport") are for activities you don't track set by
+        // set inside the app — a 5-a-side match, a dance class — so there's no live session
+        // timer to start/stop: openStartModal asks who + how long (defaultDurationMin,
+        // itself editable in Réglages) and logQuickWorkout writes the finished record
+        // straight away, same calorie formula as everything else (met × weight × duration).
+        { id:"five", name:"Five", met:7.0, location:"sport", type:"quicklog", defaultDurationMin:90, exercises:[] },
+        { id:"danse", name:"Danse (modern jazz)", met:5.0, location:"sport", type:"quicklog", defaultDurationMin:90, exercises:[] },
       ]
     };
   }
@@ -809,6 +816,13 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         sw.videoId = fw.videoId; sw.videoFile = fw.videoFile;
         if(!fw.videoId) delete sw.videoId;
         if(!fw.videoFile) delete sw.videoFile;
+        return;
+      }
+      // A "quicklog" workout (Five, Danse...) has no exercises to merge either — refresh its
+      // met/type here, but never defaultDurationMin, which is a personal setting (edited in
+      // Réglages) rather than shipped content.
+      if(fw.type === "quicklog"){
+        sw.type = fw.type;
         return;
       }
       fw.exercises.forEach(function(fe){
@@ -1043,7 +1057,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     document.documentElement.style.setProperty("--accent-ink", t.ink);
   }
 
-  var WORKOUT_COLORS = { haut:"#ff5a33", bas:"#f2b134", abdo:"#3ecf8e", "cours-abdo":"#a855f7", "cours-fessiers":"#14b8a6" };
+  var WORKOUT_COLORS = { haut:"#ff5a33", bas:"#f2b134", abdo:"#3ecf8e", "cours-abdo":"#a855f7", "cours-fessiers":"#14b8a6", five:"#3b82f6", danse:"#ec4899" };
   // Both video courses share the same play-triangle glyph (that's what marks a workout as
   // "a video", visually) and are told apart by their color instead, same as haut/bas/abdo.
   var WORKOUT_ICONS = {
@@ -1051,10 +1065,16 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     bas: '<path d="M9 3v7l-3 11h4l2-8 2 8h4l-3-11V3"/>',
     abdo: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
     "cours-abdo": '<circle cx="12" cy="12" r="9"/><path d="M10.5 8.5l5 3.5-5 3.5v-7z"/>',
-    "cours-fessiers": '<circle cx="12" cy="12" r="9"/><path d="M10.5 8.5l5 3.5-5 3.5v-7z"/>'
+    "cours-fessiers": '<circle cx="12" cy="12" r="9"/><path d="M10.5 8.5l5 3.5-5 3.5v-7z"/>',
+    five: '<circle cx="12" cy="12" r="9"/><path d="M12 8l3 2.2-1.1 3.6h-3.8L9 10.2z"/><path d="M12 3v5M6.5 7l3 2.8M17.5 7l-3 2.8M8 17l1.2-3.2M16 17l-1.2-3.2"/>',
+    danse: '<circle cx="12" cy="5" r="2"/><path d="M12 7v5M12 9l-4.5 2.5M12 9l4.5-1.5M12 12l-3.5 7M12 12l2.5 7"/>'
   };
   function workoutColor(id){ return WORKOUT_COLORS[id] || "#ff5a33"; }
   function findWorkout(id){ return state.workouts.find(function(w){return w.id===id;}); }
+  // Video courses and "quicklog" sport activities (Five, Danse...) both have no per-exercise
+  // entries and no weight lifted — used wherever a "0/0 exercices" or exercise-editing UI
+  // would just be noise for one of these.
+  function isNoExerciseWorkout(w){ return !!w && (w.type === "video" || w.type === "quicklog"); }
   function findExercise(workout, exId){ return workout.exercises.find(function(e){return e.id===exId;}); }
   // A progress item added on the fly mid-session (via "+ Ajouter un exercice") carries its own
   // exercise definition inline (p.adhocExercise) instead of living in the workout's template,
@@ -1292,7 +1312,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   }
 
   // ---------- HOME ----------
-  var LOCATION_LABELS = { salle:"Salle", maison:"À la maison" };
+  var LOCATION_LABELS = { salle:"Salle", maison:"À la maison", sport:"Sports" };
   function renderHome(){
     var groups = [];
     state.workouts.forEach(function(w){
@@ -1313,7 +1333,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
           '<div class="wicon">' + '<svg viewBox="0 0 24 24">' + (WORKOUT_ICONS[w.id]||"") + '</svg></div>' +
           '<div class="tinfo">' +
             '<div class="name disp">' + w.name + '</div>' +
-            '<div class="meta">' + (w.type==="video" ? "Cours vidéo · " + w.videoDurationMin + " min" : w.exercises.length + ' exercices') + (last ? ' · ' + fmtDate(last.date) : ' · jamais fait') + '</div>' +
+            '<div class="meta">' + (w.type==="video" ? "Cours vidéo · " + w.videoDurationMin + " min" : w.type==="quicklog" ? "Sport · " + w.defaultDurationMin + " min par défaut" : w.exercises.length + ' exercices') + (last ? ' · ' + fmtDate(last.date) : ' · jamais fait') + '</div>' +
             '<button class="btn btn-accent btn-pill" data-start="' + w.id + '">Commencer</button>' +
           '</div>' +
         '</div>';
@@ -1329,6 +1349,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
 
   function openStartModal(workoutId){
     var w = findWorkout(workoutId);
+    var isQuicklog = w.type === "quicklog";
     var overlay = document.getElementById("summary-overlay"), sheet = document.getElementById("summary-sheet");
     sheet.innerHTML = '<h2 class="disp">' + w.name + '</h2>' +
       '<div class="muted" style="margin-bottom:14px;">Qui fait la séance ?</div>' +
@@ -1337,14 +1358,45 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
           '<input type="checkbox" class="participant-check" data-pid="' + pl.id + '" checked style="width:19px;height:19px; flex-shrink:0; accent-color:var(--accent);">' +
           '<span style="font-weight:600;">' + escapeAttr(pl.name) + '</span></label>';
       }).join("") + '</div>' +
-      '<button class="btn btn-accent btn-block" style="margin-top:16px;" id="start-confirm">Commencer</button>';
+      // A quicklog activity (Five, Danse...) isn't tracked live set by set — you log it after
+      // the fact with however long it actually took, pre-filled from the workout's own
+      // default (itself editable in Réglages) instead of measuring real elapsed time.
+      (isQuicklog ? '<label class="stack" style="gap:4px; margin-top:14px;"><span class="faint" style="font-size:12.5px;">Durée (minutes)</span>' +
+        '<input type="number" id="quicklog-duration" min="1" step="5" value="' + w.defaultDurationMin + '" style="width:100%;"></label>' : '') +
+      '<button class="btn btn-accent btn-block" style="margin-top:16px;" id="start-confirm">' + (isQuicklog ? "Enregistrer" : "Commencer") + '</button>';
     overlay.classList.add("show");
     document.getElementById("start-confirm").addEventListener("click", function(){
       var checked = Array.prototype.slice.call(sheet.querySelectorAll(".participant-check:checked")).map(function(c){ return c.getAttribute("data-pid"); });
       if(!checked.length){ showAlert("Sélectionne au moins une personne."); return; }
+      if(isQuicklog){
+        var duration = parseFloat(document.getElementById("quicklog-duration").value);
+        if(!isFinite(duration) || duration <= 0){ showAlert("Renseigne une durée valide."); return; }
+        closeOverlay(overlay, sheet);
+        logQuickWorkout(workoutId, checked, duration);
+        return;
+      }
       closeOverlay(overlay, sheet);
       startSession(workoutId, checked);
     });
+  }
+  // Writes a finished session straight away for a quicklog activity — no active-session/
+  // live-timer detour, same calorie formula (met × weight × duration) as finishSession, just
+  // with a duration you typed instead of one measured from start/finish timestamps.
+  function logQuickWorkout(workoutId, participantIds, durationMin){
+    var w = findWorkout(workoutId);
+    var caloriesByPerson = {}, volumeByPerson = {};
+    participantIds.forEach(function(pid){
+      caloriesByPerson[pid] = w.met * 3.5 * (state.bodyWeights[pid]||70) / 200 * durationMin;
+      volumeByPerson[pid] = 0;
+    });
+    var record = {
+      id: uid(), workoutId:w.id, workoutName:w.name, date:new Date().toISOString(), participants:participantIds,
+      durationMin:durationMin, caloriesByPerson:caloriesByPerson, volumeByPerson:volumeByPerson, exercises:[]
+    };
+    state.sessions.push(record);
+    state.currentTab = "home";
+    save();
+    showSummary(record, {});
   }
   function lastSessionFor(workoutId){
     var list = state.sessions.filter(function(s){return s.workoutId===workoutId;});
@@ -1807,9 +1859,10 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   function showSummary(record, prsByPerson){
     var overlay = document.getElementById("summary-overlay"), sheet = document.getElementById("summary-sheet");
     var participants = record.participants || state.people.map(function(p){return p.id;});
-    // A video course has no per-exercise entries and no weight lifted — "0/0 exercices" and
-    // "0 kg volume" would just be noise, so it skips straight to duration + calories.
-    var isVideo = (findWorkout(record.workoutId)||{}).type === "video";
+    // A video course or quicklog sport has no per-exercise entries and no weight lifted —
+    // "0/0 exercices" and "0 kg volume" would just be noise, so it skips straight to
+    // duration + calories.
+    var isVideo = isNoExerciseWorkout(findWorkout(record.workoutId));
     var html = '<h2 class="disp">Séance enregistrée</h2>' +
       '<div class="muted">' + record.workoutName + ' · ' + fmtDateFull(record.date) + '</div>' +
       '<div class="stat-grid" style="margin-top:14px;">' + stat(fmtDur(record.durationMin), "Durée");
@@ -1856,7 +1909,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     }
     list.forEach(function(s){
       var participants = s.participants || state.people.map(function(p){return p.id;});
-      var isVideo = (findWorkout(s.workoutId)||{}).type === "video";
+      var isVideo = isNoExerciseWorkout(findWorkout(s.workoutId));
       var doneN=0, total=0;
       s.exercises.forEach(function(e){ participants.forEach(function(pid){ total++; if(e.entries[pid].done) doneN++; }); });
       html += '<div class="hist-item" data-hist="' + s.id + '">' +
@@ -1869,7 +1922,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
           return '<span class="faint num">' + personName(pid) + ': ' + Math.round(s.caloriesByPerson[pid]) + ' kcal' + (isVideo?'':' · ' + Math.round(s.volumeByPerson[pid]) + ' kg') + '</span>';
         }).join("") + '</div>' +
         '<div class="hist-detail" id="detail-' + s.id + '">' +
-          (isVideo ? '<div class="faint">Cours vidéo — pas de détail exercice par exercice.</div>' :
+          (isVideo ? '<div class="faint">Pas de détail exercice par exercice pour ce type de séance.</div>' :
           s.exercises.map(function(e){
             return '<div class="exname">' + e.name + '</div>' + participants.map(function(pid){
               var en = e.entries[pid];
@@ -1915,7 +1968,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     var clone = JSON.parse(JSON.stringify(orig));
     var originalDurationMin = orig.durationMin;
     var workout = findWorkout(clone.workoutId);
-    var isVideo = workout && workout.type === "video";
+    var isVideo = isNoExerciseWorkout(workout);
     var participants = clone.participants || state.people.map(function(p){ return p.id; });
     var overlay = document.getElementById("summary-overlay"), sheet = document.getElementById("summary-sheet");
 
@@ -1950,7 +2003,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         '<input type="number" min="1" step="1" id="edit-duration" value="' + Math.round(clone.durationMin) + '" style="width:100%;"></label>';
 
       if(isVideo){
-        html += '<div class="faint">Cours vidéo — pas de détail exercice par exercice à modifier.</div>';
+        html += '<div class="faint">Pas de détail exercice par exercice à modifier pour ce type de séance.</div>';
       } else {
         clone.exercises.forEach(function(e, exIdx){
           html += '<div class="card" style="padding:12px;">' +
@@ -2994,6 +3047,20 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       // adding/editing exercises would just be a dead end (renderSession() never surfaces
       // them for a video workout), so skip it rather than show an editor that does nothing.
       if(w.type === "video") return;
+      // A quicklog activity (Five, Danse...) has nothing to edit either, except the default
+      // duration proposed each time you log it — a small inline card instead of the full
+      // exercise-editing accordion.
+      if(w.type === "quicklog"){
+        html += '<div class="card row between" style="gap:12px;">' +
+          '<div><div class="section-title" style="margin:0;">' + escapeAttr(w.name) + '</div>' +
+          '<div class="faint" style="margin-top:2px;">Durée proposée par défaut au moment de logger.</div></div>' +
+          '<div class="row" style="gap:4px; flex-shrink:0;">' +
+            '<input type="number" data-quicklog-duration="' + w.id + '" min="1" step="5" value="' + w.defaultDurationMin + '" style="width:56px; text-align:center;">' +
+            '<span class="muted">min</span>' +
+          '</div>' +
+        '</div>';
+        return;
+      }
       html += '<div class="card stack" data-workout="' + w.id + '">' +
         '<button class="workout-toggle" data-toggle-workout="' + w.id + '" type="button">' +
           '<h3>' + w.name + '</h3>' +
@@ -3056,6 +3123,16 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       this.value = v;
       state.restDurationDefault = v;
       save();
+    });
+    $view.querySelectorAll("[data-quicklog-duration]").forEach(function(inp){
+      inp.addEventListener("change", function(){
+        var w = findWorkout(inp.getAttribute("data-quicklog-duration"));
+        var v = parseInt(inp.value, 10);
+        if(isNaN(v) || v < 1) v = w.defaultDurationMin;
+        inp.value = v;
+        w.defaultDurationMin = v;
+        save();
+      });
     });
     document.getElementById("gemini-key-input").addEventListener("change", function(){
       state.geminiApiKey = this.value.trim();
