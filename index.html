@@ -614,7 +614,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b68";
+  var BUILD_VERSION = "b69";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -681,8 +681,8 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       // Optional per-person profile used to estimate daily calorie & protein targets
       // (Mifflin-St Jeor BMR × activity level). Empty age/heightCm means "not filled in
       // yet" — the nutrition card in Progrès just asks for them instead of guessing.
-      bodyProfiles: { p1:{sex:"f", age:null, heightCm:null, activity:"mod", goal:"maintien"},
-                       p2:{sex:"m", age:null, heightCm:null, activity:"mod", goal:"maintien"} },
+      bodyProfiles: { p1:{sex:"f", age:null, heightCm:null, activity:"mod", goal:"maintien", burnGoal:null},
+                       p2:{sex:"m", age:null, heightCm:null, activity:"mod", goal:"maintien", burnGoal:null} },
       // Dated log of body-weight readings per person (see logBodyWeight) — bodyWeights above
       // stays the single "current" number everything else (calorie burn, nutrition targets)
       // reads, this is purely the history for the Progrès chart.
@@ -845,7 +845,10 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   function ensureBodyProfiles(st){
     if(!st.bodyProfiles) st.bodyProfiles = {};
     st.people.forEach(function(pl){
-      if(!st.bodyProfiles[pl.id]) st.bodyProfiles[pl.id] = {sex:"m", age:null, heightCm:null, activity:"mod", goal:"maintien"};
+      if(!st.bodyProfiles[pl.id]) st.bodyProfiles[pl.id] = {sex:"m", age:null, heightCm:null, activity:"mod", goal:"maintien", burnGoal:null};
+      // Saves from before the "calories brûlées" daily goal (Progrès) existed have a profile
+      // object already, just missing this one field.
+      if(st.bodyProfiles[pl.id].burnGoal === undefined) st.bodyProfiles[pl.id].burnGoal = null;
     });
     return st;
   }
@@ -2070,9 +2073,33 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   }
 
   // ---------- PROGRESS ----------
+  // Which day the "Calories brûlées" section points at — resets to today on reload, same
+  // spirit as nutritionViewDate in the Nutrition tab.
+  var progressViewDate = new Date();
+  // Daily calories-burned total for one person over the last `days` days (today inclusive),
+  // for the trend chart — same shape as nutritionTrendPoints, reused by renderLineChartSvg.
+  function burnTrendPoints(pid, days){
+    var points = [];
+    for(var i=days-1; i>=0; i--){
+      var d = new Date(); d.setDate(d.getDate()-i);
+      var key = dayKey(d);
+      var total = state.sessions.filter(function(s){
+        return (s.participants || state.people.map(function(p){return p.id;})).indexOf(pid) !== -1 && dayKey(s.date) === key;
+      }).reduce(function(a,s){ return a + (s.caloriesByPerson ? (s.caloriesByPerson[pid]||0) : 0); }, 0);
+      points.push({ date: d.toISOString(), value: Math.round(total) });
+    }
+    return points;
+  }
   function renderProgress(){
     var sessions = state.sessions;
     var pid = state.currentPerson || "p1";
+    var burnViewKey = dayKey(progressViewDate);
+    var isBurnToday = burnViewKey === dayKey(new Date());
+    var burnDaySessions = sessions.filter(function(s){
+      return (s.participants || state.people.map(function(p){return p.id;})).indexOf(pid) !== -1 && dayKey(s.date) === burnViewKey;
+    });
+    var burnDayCal = burnDaySessions.reduce(function(a,s){ return a + (s.caloriesByPerson ? (s.caloriesByPerson[pid]||0) : 0); }, 0);
+    var burnGoal = (state.bodyProfiles[pid]||{}).burnGoal;
     // Régularité is about THIS person's own attendance, not the couple's combined total —
     // a session counts for someone only if they were actually a participant in it (same
     // list finishSession() used to compute their calories/volume, so "did the session" and
@@ -2092,6 +2119,34 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     html += '<div class="pill-group">' + state.people.map(function(pl){
       return '<button class="pill ' + (pl.id===pid?"active":"") + ' ' + (pl.id==="p2"?"p2":"") + '" data-person-select="' + pl.id + '">' + escapeAttr(pl.name) + '</button>';
     }).join("") + '</div>';
+
+    html += '<div class="row between" style="align-items:center;">' +
+      '<button class="icon-btn" type="button" id="prog-day-prev"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>' +
+      '<div style="font-weight:600; text-align:center; flex:1;">' + (isBurnToday ? "Aujourd’hui" : fmtDateFull(progressViewDate.toISOString())) + '</div>' +
+      '<button class="icon-btn" type="button" id="prog-day-next" ' + (isBurnToday ? 'style="opacity:.3;" disabled' : '') + '><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>' +
+    '</div>';
+    html += '<div class="section-title">Calories brûlées — ' + escapeAttr(personName(pid)) + '</div>';
+    html += '<div class="stat-grid">' + stat(Math.round(burnDayCal) + (burnGoal ? " / " + burnGoal : "") + " kcal", "Brûlées " + (isBurnToday?"aujourd’hui":"ce jour-là")) + '</div>';
+    if(!burnGoal) html += '<div class="faint">Renseigne un objectif de calories brûlées par jour dans Réglages pour voir ta progression.</div>';
+    if(burnDaySessions.length){
+      html += '<div class="stack" style="gap:6px;">' + burnDaySessions.map(function(s){
+        return '<div class="card row between" style="padding:10px 14px;">' +
+          '<div><div style="font-weight:600; font-size:13.5px;">' + escapeAttr(s.workoutName) + '</div>' +
+          '<div class="faint" style="font-size:11.5px;">' + fmtDur(s.durationMin) + '</div></div>' +
+          '<div class="num" style="font-weight:600; flex-shrink:0;">' + Math.round(s.caloriesByPerson ? (s.caloriesByPerson[pid]||0) : 0) + ' kcal</div>' +
+        '</div>';
+      }).join("") + '</div>';
+    } else {
+      html += '<div class="empty">Aucune séance ' + (isBurnToday?"aujourd’hui":"ce jour-là") + ' pour ' + escapeAttr(personName(pid)) + '.</div>';
+    }
+
+    html += '<div class="section-title">Tendance calories brûlées (14 derniers jours) — ' + escapeAttr(personName(pid)) + '</div>';
+    var burnPoints = burnTrendPoints(pid, 14);
+    if(burnPoints.some(function(p){ return p.value>0; })){
+      html += '<div class="chart-wrap">' + renderLineChartSvg(burnPoints, " kcal") + '</div>';
+    } else {
+      html += '<div class="faint">Enregistre quelques séances pour voir la tendance.</div>';
+    }
 
     html += '<div class="section-title">Régularité — ' + escapeAttr(personName(pid)) + '</div>';
     html += '<div class="stat-grid">' + stat(totalSessions,"Séances au total") + stat(thisMonth,"Séances ce mois-ci") +
@@ -2144,6 +2199,13 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
 
     $view.querySelectorAll("[data-person-select]").forEach(function(btn){
       btn.addEventListener("click", function(){ state.currentPerson = btn.getAttribute("data-person-select"); save(); renderProgress(); });
+    });
+    document.getElementById("prog-day-prev").addEventListener("click", function(){
+      progressViewDate.setDate(progressViewDate.getDate()-1); renderProgress();
+    });
+    var progNextBtn = document.getElementById("prog-day-next");
+    if(!isBurnToday) progNextBtn.addEventListener("click", function(){
+      progressViewDate.setDate(progressViewDate.getDate()+1); renderProgress();
     });
     var gotoSettingsBtn = document.getElementById("goto-settings-nutrition");
     if(gotoSettingsBtn) gotoSettingsBtn.addEventListener("click", function(){ state.currentTab = "settings"; render(); });
@@ -3029,6 +3091,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
                 return '<option value="' + k + '"' + (pr.goal===k?" selected":"") + '>' + GOALS[k].label + '</option>';
               }).join("") +
             '</select></label>' +
+            '<label class="pf-field" style="grid-column:span 3;">Objectif calories brûlées / jour<input type="number" data-person-burngoal="' + pl.id + '" value="' + (pr.burnGoal||"") + '" placeholder="kcal, optionnel"></label>' +
           '</div>' +
         '</div>';
       }).join("") +
@@ -3176,6 +3239,13 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     $view.querySelectorAll("[data-person-goal]").forEach(function(sel){
       sel.addEventListener("change", function(){
         state.bodyProfiles[sel.getAttribute("data-person-goal")].goal = sel.value; save();
+      });
+    });
+    $view.querySelectorAll("[data-person-burngoal]").forEach(function(inp){
+      inp.addEventListener("change", function(){
+        var v = parseInt(inp.value, 10);
+        state.bodyProfiles[inp.getAttribute("data-person-burngoal")].burnGoal = (!isNaN(v) && v>0) ? v : null;
+        save();
       });
     });
     $view.querySelectorAll("[data-ex-row]").forEach(function(row){
