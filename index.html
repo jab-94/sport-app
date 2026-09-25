@@ -614,7 +614,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b71";
+  var BUILD_VERSION = "b72";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -1120,14 +1120,17 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       protein: Math.round(w * goal.proteinPerKg)
     };
   }
-  // Objectif calories brûlées / jour — dérivé directement du niveau d'activité choisi dans
-  // Réglages ("Vous deux") plutôt que d'un chiffre tapé à la main : c'est déjà la seule
-  // question du profil qui parle de fréquence de sport, donc pas besoin d'un champ de plus.
-  var BURN_GOAL_BY_ACTIVITY = { sed:150, light:250, mod:400, active:550, veryactive:700 };
+  // Objectif calories brûlées / jour — TDEE - BMR = la part de la dépense due à l'activité
+  // (pas le métabolisme de repos), donc ça dépend du poids/taille/âge/sexe (via le BMR) ET
+  // du niveau d'activité (via le TDEE), ajustée par l'objectif : un peu plus si perte de gras
+  // (on veut brûler plus), un peu moins si prise de masse (pas intérêt à trop cramer).
+  var BURN_GOAL_MULT_BY_GOAL = { perte: 1.15, maintien: 1.0, prise: 0.85 };
   function calcBurnGoal(pid){
+    var tdee = calcTDEE(pid), bmr = calcBMR(pid);
+    if(!tdee || !bmr) return null;
     var pr = state.bodyProfiles[pid];
-    if(!pr) return null;
-    return BURN_GOAL_BY_ACTIVITY[pr.activity] || BURN_GOAL_BY_ACTIVITY.mod;
+    var mult = BURN_GOAL_MULT_BY_GOAL[pr.goal] || BURN_GOAL_MULT_BY_GOAL.maintien;
+    return Math.round((tdee - bmr) * mult);
   }
   function otherPersonId(pid){ return pid==="p1" ? "p2" : "p1"; }
 
@@ -2133,7 +2136,14 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     '</div>';
     html += '<div class="section-title">Calories brûlées — ' + escapeAttr(personName(pid)) + '</div>';
     html += '<div class="stat-grid">' + stat(Math.round(burnDayCal) + (burnGoal ? " / " + burnGoal : "") + " kcal", "Brûlées " + (isBurnToday?"aujourd’hui":"ce jour-là")) + '</div>';
-    html += '<div class="faint" style="opacity:.65;">Objectif calculé depuis le niveau d’activité de ' + escapeAttr(personName(pid)) + ' (Réglages).</div>';
+    if(burnGoal){
+      html += '<div class="faint" style="opacity:.65;">Objectif calculé depuis le poids, la taille, l’âge, l’activité et l’objectif (perte/maintien/prise) de ' + escapeAttr(personName(pid)) + ' (Réglages).</div>';
+    } else {
+      html += '<div class="card stack" style="gap:8px;">' +
+        '<div class="faint">Renseigne la taille et l’âge de ' + escapeAttr(personName(pid)) + ' dans Réglages pour voir son objectif de calories brûlées.</div>' +
+        '<button class="btn btn-line btn-sm" id="goto-settings-burn" style="align-self:flex-start;">Aller dans Réglages</button>' +
+      '</div>';
+    }
     if(burnDaySessions.length){
       html += '<div class="stack" style="gap:6px;">' + burnDaySessions.map(function(s){
         return '<div class="card row between" style="padding:10px 14px;">' +
@@ -2215,6 +2225,8 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     });
     var gotoSettingsBtn = document.getElementById("goto-settings-nutrition");
     if(gotoSettingsBtn) gotoSettingsBtn.addEventListener("click", function(){ state.currentTab = "settings"; render(); });
+    var gotoSettingsBurnBtn = document.getElementById("goto-settings-burn");
+    if(gotoSettingsBurnBtn) gotoSettingsBurnBtn.addEventListener("click", function(){ state.currentTab = "settings"; render(); });
     document.getElementById("weight-log-btn").addEventListener("click", function(){
       var v = parseFloat(document.getElementById("weight-log-input").value);
       if(isNaN(v) || v<=0) return;
@@ -3098,7 +3110,9 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
               }).join("") +
             '</select></label>' +
           '</div>' +
-          '<div class="faint" style="margin-top:6px; font-size:11.5px;">Objectif calories brûlées : ' + calcBurnGoal(pl.id) + ' kcal/jour, calculé depuis l’activité ci-dessus (visible dans Progrès).</div>' +
+          '<div class="faint" style="margin-top:6px; font-size:11.5px;">' + (calcBurnGoal(pl.id) ?
+            'Objectif calories brûlées : ' + calcBurnGoal(pl.id) + ' kcal/jour, calculé depuis le poids/taille/âge/activité/objectif ci-dessus (visible dans Progrès).' :
+            'Renseigne la taille et l’âge ci-dessus pour calculer l’objectif de calories brûlées (visible dans Progrès).') + '</div>' +
         '</div>';
       }).join("") +
       '<div class="faint">Le poids sert à estimer les calories dépensées pendant les séances. Taille + âge + sexe + activité donnent les calories & protéines à viser chaque jour (visible dans Progrès).</div>' +
@@ -3250,6 +3264,9 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     $view.querySelectorAll("[data-person-goal]").forEach(function(sel){
       sel.addEventListener("change", function(){
         state.bodyProfiles[sel.getAttribute("data-person-goal")].goal = sel.value; save();
+        // Same reasoning as data-person-activity above: the goal also feeds the computed
+        // calories-brûlées line right below, so re-render to keep it in sync.
+        renderSettings();
       });
     });
     $view.querySelectorAll("[data-ex-row]").forEach(function(row){
