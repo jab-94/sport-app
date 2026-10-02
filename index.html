@@ -614,7 +614,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b81";
+  var BUILD_VERSION = "b82";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -2123,13 +2123,19 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // period at a time via shiftPeriod rather than always by a day.
   var progressViewDate = new Date();
   var progressPeriod = "day";
-  var WEEKLY_SESSION_GOAL = 3;
-  // Sessions (any workout type) this calendar week that at least one of `ids` participated
-  // in — a joint session counts once, not twice, which is why this isn't a sum of per-person
-  // counts. Always "this week" regardless of progressPeriod — the ring is a standing weekly
-  // goal, not the period being browsed.
-  function weeklySessionCount(pid){
-    var start = periodStart("week", new Date()), end = periodEnd("week", new Date());
+  // The session-count ring's granularity follows whichever period you're browsing: "Jour" and
+  // "Semaine" both track the week (goal 3), "Mois" tracks the month (goal 12), "Année" tracks
+  // the year (goal 140) — a weekly goal checked once a year would be meaningless, so the ring
+  // always matches the timescale you're actually looking at.
+  var RING_GOALS = { week:3, month:12, year:140 };
+  function ringPeriodFor(period){ return period === "day" ? "week" : period; }
+  // Sessions (any workout type) in the ring-period (week/month/year) containing `refDate` that
+  // at least one of `ids` participated in — a joint session counts once, not twice, which is
+  // why this isn't a sum of per-person counts. Used for a single person; "Nous deux" calls this
+  // once per real person instead (see renderProgress) since comparing the two against the same
+  // goal is the whole point, not merging them into one union count.
+  function sessionCountForPeriod(pid, type, refDate){
+    var start = periodStart(type, refDate), end = periodEnd(type, refDate);
     var ids = personIdsFor(pid);
     return state.sessions.filter(function(s){
       if(!inPeriod(s.date, start, end)) return false;
@@ -2138,17 +2144,54 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   }
   // Small ring gauge, same visual idea as a watch "close your ring" goal — stroke-dasharray
   // is how an SVG circle fakes a progress arc (a dash as long as the "done" share of the
-  // circumference, gap for the rest), rotated -90° so it starts at 12 o'clock.
-  function ringSvg(v, goal, size){
+  // circumference, gap for the rest), rotated -90° so it starts at 12 o'clock. `ringArc` draws
+  // just the two circles at an explicit radius so two can share one <svg> (Am/Jab concentric
+  // rings in "Nous deux") instead of each being centered in their own.
+  function ringArc(cx, cy, r, sw, pct, color){
+    var circ = 2*Math.PI*r;
+    return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="var(--surface-2)" stroke-width="' + sw + '"/>' +
+      '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="' + sw + '" stroke-linecap="round" ' +
+        'stroke-dasharray="' + (circ*pct).toFixed(1) + ' ' + circ.toFixed(1) + '" transform="rotate(-90 ' + cx + ' ' + cy + ')"/>';
+  }
+  function ringSvg(v, goal, size, color){
     var sw = Math.max(5, Math.round(size*0.11));
-    var r = (size-sw)/2, c = size/2, circ = 2*Math.PI*r;
+    var r = (size-sw)/2, c = size/2;
     var pct = goal>0 ? Math.min(1, v/goal) : 0;
     return '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '">' +
-      '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="none" stroke="var(--surface-2)" stroke-width="' + sw + '"/>' +
-      '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="none" stroke="var(--accent)" stroke-width="' + sw + '" stroke-linecap="round" ' +
-        'stroke-dasharray="' + (circ*pct).toFixed(1) + ' ' + circ.toFixed(1) + '" transform="rotate(-90 ' + c + ' ' + c + ')"/>' +
+      ringArc(c, c, r, sw, pct, color || "var(--accent)") +
       '<text x="' + c + '" y="' + (c+5) + '" text-anchor="middle" font-size="15" font-weight="700" fill="var(--ink)">' + v + '/' + goal + '</text>' +
     '</svg>';
+  }
+  // Two concentric rings, one color per person — "Nous deux" compares Am and Jab against
+  // their OWN individual goal (same goal value each, e.g. 3/semaine chacun) rather than a
+  // merged count against a doubled goal, which the goal itself never changes to reflect.
+  function dualRingSvg(vA, goalA, colorA, vB, goalB, colorB, size){
+    var sw = Math.max(5, Math.round(size*0.09));
+    var c = size/2;
+    var rOuter = c - sw/2 - 1;
+    var rInner = rOuter - sw - 3;
+    var pctA = goalA>0 ? Math.min(1, vA/goalA) : 0;
+    var pctB = goalB>0 ? Math.min(1, vB/goalB) : 0;
+    return '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '">' +
+      ringArc(c, c, rOuter, sw, pctA, colorA) +
+      ringArc(c, c, rInner, sw, pctB, colorB) +
+    '</svg>';
+  }
+  // Two horizontal progress bars, one per person, for a goal that's personal rather than
+  // mergeable (calories brûlées) — half of your own goal reached fills the bar halfway,
+  // regardless of how the other person is doing. `goal` null (profil incomplet) shows that
+  // instead of a bar nobody could interpret.
+  function dualProgressBarsHtml(valA, goalA, colorA, nameA, valB, goalB, colorB, nameB, unit){
+    function row(val, goal, color, name){
+      var right = goal == null ? '<span class="faint" style="font-size:11px;">profil incomplet</span>' :
+        '<span class="faint num">' + Math.round(val) + ' / ' + Math.round(goal) + ' ' + unit + '</span>';
+      var pct = (goal != null && goal>0) ? Math.min(100, Math.round(val/goal*100)) : 0;
+      return '<div class="stack" style="gap:4px;">' +
+        '<div class="row between" style="font-size:12px;"><span style="color:' + color + '; font-weight:600;">' + escapeAttr(name) + '</span>' + right + '</div>' +
+        '<div class="progress-track"><div class="progress-fill" style="width:' + pct + '%; background:' + color + ';"></div></div>' +
+      '</div>';
+    }
+    return '<div class="card stack" style="gap:10px;">' + row(valA, goalA, colorA, nameA) + row(valB, goalB, colorB, nameB) + '</div>';
   }
   // Daily calories-burned total for one or both people (see personIdsFor) over the last `days`
   // days (today inclusive), for the trend chart — same shape as nutritionTrendPoints, reused
@@ -2199,7 +2242,15 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       return a + ids.reduce(function(b,id){ return b + (s.caloriesByPerson ? (s.caloriesByPerson[id]||0) : 0); }, 0);
     }, 0);
     var burnGoal = calcBurnGoalFor(pid);
-    var weekCount = weeklySessionCount(pid);
+    var ringType = ringPeriodFor(progressPeriod);
+    var ringGoal = RING_GOALS[ringType];
+    var ringLabel = { week:"cette semaine", month:"ce mois-ci", year:"cette année" }[ringType];
+    var ringCount = sessionCountForPeriod(pid, ringType, progressViewDate);
+    var p1Cal = burnPeriodSessions.reduce(function(a,s){ return a + (s.caloriesByPerson?(s.caloriesByPerson.p1||0):0); }, 0);
+    var p2Cal = burnPeriodSessions.reduce(function(a,s){ return a + (s.caloriesByPerson?(s.caloriesByPerson.p2||0):0); }, 0);
+    var p1BurnGoal = calcBurnGoal("p1"), p2BurnGoal = calcBurnGoal("p2");
+    var ringCountP1 = sessionCountForPeriod("p1", ringType, progressViewDate);
+    var ringCountP2 = sessionCountForPeriod("p2", ringType, progressViewDate);
 
     // Régularité is about THIS person's (or the couple's) own attendance, not an unrelated
     // total — a session counts only if at least one of `ids` actually participated in it (same
@@ -2233,20 +2284,44 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       '<button class="icon-btn" type="button" id="prog-day-next" ' + (isCurrentP ? 'style="opacity:.3;" disabled' : '') + '><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>' +
     '</div>';
     html += '<div class="section-title">Calories brûlées — ' + escapeAttr(personName(pid)) + '</div>';
-    html += '<div class="stat-grid">' +
-      stat(Math.round(burnPeriodCal) + (burnGoal ? " / " + burnGoal : "") + " kcal", "Brûlées " + (isCurrentP?periodNow:periodThen)) +
-      '<div class="stat-tile" style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;">' +
-        ringSvg(weekCount, WEEKLY_SESSION_GOAL, 64) +
-        '<div class="l" style="text-align:center;">Séances cette semaine</div>' +
-      '</div>' +
-    '</div>';
-    if(burnGoal){
-      html += '<div class="faint" style="opacity:.65;">Objectif calculé depuis le poids, la taille, l’âge, l’activité et l’objectif (perte/maintien/prise) de ' + escapeAttr(personNamesJoined(pid)) + ' (Réglages).</div>';
-    } else {
-      html += '<div class="card stack" style="gap:8px;">' +
-        '<div class="faint">Renseigne la taille et l’âge de ' + escapeAttr(personNamesJoined(pid)) + ' dans Réglages pour voir ' + (pid==="both"?"leur":"son") + ' objectif de calories brûlées.</div>' +
-        '<button class="btn btn-line btn-sm" id="goto-settings-burn" style="align-self:flex-start;">Aller dans Réglages</button>' +
+    if(pid === "both"){
+      // "Nous deux" compare, pas cumule : deux anneaux (un par personne) contre le MÊME
+      // objectif chacun, et deux barres de progression plutôt qu'un total fusionné — brûler
+      // la moitié de son propre objectif remplit sa barre à moitié, point final, peu importe
+      // où en est l'autre.
+      html += '<div class="stat-tile" style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; margin-bottom:10px;">' +
+        dualRingSvg(ringCountP1, ringGoal, "var(--p1)", ringCountP2, ringGoal, "var(--p2)", 72) +
+        '<div class="row" style="gap:14px; font-size:12px;">' +
+          '<span style="color:var(--p1); font-weight:600;">' + escapeAttr(personName("p1")) + ' ' + ringCountP1 + '/' + ringGoal + '</span>' +
+          '<span style="color:var(--p2); font-weight:600;">' + escapeAttr(personName("p2")) + ' ' + ringCountP2 + '/' + ringGoal + '</span>' +
+        '</div>' +
+        '<div class="l" style="text-align:center;">Séances ' + ringLabel + ', objectif de chacun</div>' +
       '</div>';
+      html += dualProgressBarsHtml(p1Cal, p1BurnGoal, "var(--p1)", personName("p1"), p2Cal, p2BurnGoal, "var(--p2)", personName("p2"), "kcal");
+      if(p1BurnGoal==null || p2BurnGoal==null){
+        html += '<div class="card stack" style="gap:8px; margin-top:8px;">' +
+          '<div class="faint">Renseigne la taille et l’âge de ' + escapeAttr([p1BurnGoal==null?personName("p1"):null, p2BurnGoal==null?personName("p2"):null].filter(Boolean).join(" et ")) + ' dans Réglages pour voir son objectif de calories brûlées.</div>' +
+          '<button class="btn btn-line btn-sm" id="goto-settings-burn" style="align-self:flex-start;">Aller dans Réglages</button>' +
+        '</div>';
+      } else {
+        html += '<div class="faint" style="opacity:.65; margin-top:6px;">Objectif de chacun calculé depuis son poids, sa taille, son âge, son activité et son objectif (perte/maintien/prise) (Réglages).</div>';
+      }
+    } else {
+      html += '<div class="stat-grid">' +
+        stat(Math.round(burnPeriodCal) + (burnGoal ? " / " + burnGoal : "") + " kcal", "Brûlées " + (isCurrentP?periodNow:periodThen)) +
+        '<div class="stat-tile" style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;">' +
+          ringSvg(ringCount, ringGoal, 64) +
+          '<div class="l" style="text-align:center;">Séances ' + ringLabel + '</div>' +
+        '</div>' +
+      '</div>';
+      if(burnGoal){
+        html += '<div class="faint" style="opacity:.65;">Objectif calculé depuis le poids, la taille, l’âge, l’activité et l’objectif (perte/maintien/prise) de ' + escapeAttr(personNamesJoined(pid)) + ' (Réglages).</div>';
+      } else {
+        html += '<div class="card stack" style="gap:8px;">' +
+          '<div class="faint">Renseigne la taille et l’âge de ' + escapeAttr(personNamesJoined(pid)) + ' dans Réglages pour voir son objectif de calories brûlées.</div>' +
+          '<button class="btn btn-line btn-sm" id="goto-settings-burn" style="align-self:flex-start;">Aller dans Réglages</button>' +
+        '</div>';
+      }
     }
     if(burnPeriodSessions.length){
       html += '<div class="stack" style="gap:6px;">' + burnPeriodSessions.map(function(s){
