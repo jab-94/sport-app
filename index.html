@@ -614,7 +614,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b85";
+  var BUILD_VERSION = "b86";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -2143,6 +2143,12 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // period at a time via shiftPeriod rather than always by a day.
   var progressViewDate = new Date();
   var progressPeriod = "day";
+  // The default screen for Progrès is "Nous deux" in "Jour" view (asked for explicitly) — a
+  // page-load-scoped var, same spirit as progressPeriod above, rather than state.currentPerson
+  // (shared with the Nutrition tab, and persisted): switching this doesn't touch what Nutrition
+  // remembers, and it resets to "both" on every fresh app open without forcing that choice onto
+  // Nutrition too.
+  var progressPerson = "both";
   // The session-count ring's granularity follows whichever period you're browsing: "Jour" and
   // "Semaine" both track the week (goal 3), "Mois" tracks the month (goal 12), "Année" tracks
   // the year (goal 140) — a weekly goal checked once a year would be meaningless, so the ring
@@ -2253,7 +2259,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   }
   function renderProgress(){
     var sessions = state.sessions;
-    var pid = state.currentPerson || "p1";
+    var pid = progressPerson;
     var ids = personIdsFor(pid);
     var pStart = periodStart(progressPeriod, progressViewDate), pEnd = periodEnd(progressPeriod, progressViewDate);
     var isCurrentP = isCurrentPeriod(progressPeriod, progressViewDate);
@@ -2433,7 +2439,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     $view.innerHTML = html;
 
     $view.querySelectorAll("[data-person-select]").forEach(function(btn){
-      btn.addEventListener("click", function(){ state.currentPerson = btn.getAttribute("data-person-select"); save(); renderProgress(); });
+      btn.addEventListener("click", function(){ progressPerson = btn.getAttribute("data-person-select"); renderProgress(); });
     });
     $view.querySelectorAll("[data-period-select]").forEach(function(btn){
       btn.addEventListener("click", function(){ progressPeriod = btn.getAttribute("data-period-select"); renderProgress(); });
