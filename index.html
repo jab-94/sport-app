@@ -614,7 +614,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b83";
+  var BUILD_VERSION = "b84";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -2206,9 +2206,14 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       var right = goal == null ? '<span class="faint" style="font-size:11px;">profil incomplet</span>' :
         '<span class="faint num">' + Math.round(val) + ' / ' + Math.round(goal) + ' ' + unit + '</span>';
       var pct = (goal != null && goal>0) ? Math.min(100, Math.round(val/goal*100)) : 0;
+      // .progress-track relies on `flex:1` to fill its container's width — that only works
+      // inside a row (horizontal) flex parent, same as the session-bar's rest timer uses it.
+      // Nesting it straight inside this .stack (a COLUMN flex container) makes `flex:1` target
+      // height instead, collapsing it to 0 — wrapping it in its own .row restores the row
+      // context so the bar is actually visible (bug: bar invisible in "Nous deux").
       return '<div class="stack" style="gap:4px;">' +
         '<div class="row between" style="font-size:12px;"><span style="color:' + color + '; font-weight:600;">' + escapeAttr(name) + '</span>' + right + '</div>' +
-        '<div class="progress-track"><div class="progress-fill" style="width:' + pct + '%; background:' + color + ';"></div></div>' +
+        '<div class="row"><div class="progress-track"><div class="progress-fill" style="width:' + pct + '%; background:' + color + ';"></div></div></div>' +
       '</div>';
     }
     return '<div class="card stack" style="gap:10px;">' + row(valA, goalA, colorA, nameA) + row(valB, goalB, colorB, nameB) + '</div>';
