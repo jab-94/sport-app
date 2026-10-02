@@ -614,7 +614,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b87";
+  var BUILD_VERSION = "b88";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -1037,17 +1037,63 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     }, 1500);
   }
 
-  // Adopts a full state object fetched from the shared cloud doc (pulled automatically from
-  // another device, or via the manual "Restaurer" button) — never called for our own edits,
-  // so it deliberately does NOT go through save() (that would re-stamp syncVersion with
-  // Date.now() and immediately push the exact thing we just pulled straight back up).
+  // Adopts a full state object fetched from the shared cloud doc — a true wholesale replace,
+  // used ONLY for the manual "Restaurer" button, which explicitly tells the person it replaces
+  // every bit of local data with the cloud's copy. Never called for our own edits, so it
+  // deliberately does NOT go through save() (that would re-stamp syncVersion with Date.now()
+  // and immediately push the exact thing we just pulled straight back up).
   function adoptRemoteState(remote){
     state = ensureRestDuration(ensureBodyWeightLog(ensureBodyProfiles(migrateContent(remote))));
     persistLocally();
   }
 
+  // Union-merges two arrays of {id, ...} records — local's own records first (untouched),
+  // then any record that only exists on the other side appended. Doesn't try to resolve a
+  // genuine edit/edit conflict on the very same id (rare — this device and the other one
+  // editing the identical record at the same moment), but it NEVER drops a record that only
+  // one side knows about, which is what actually happened in the reported bug: Am logged
+  // "Haut du corps", Jab's phone pushed its own state before pulling hers, and the automatic
+  // pull on her phone afterwards wholesale-replaced her local sessions with his — silently
+  // deleting a session that both phones should have kept.
+  function mergeArraysById(localArr, remoteArr){
+    localArr = (localArr||[]).filter(function(r){ return r && r.id; });
+    remoteArr = (remoteArr||[]).filter(function(r){ return r && r.id; });
+    var knownIds = {};
+    localArr.forEach(function(r){ knownIds[r.id] = true; });
+    return localArr.concat(remoteArr.filter(function(r){ return !knownIds[r.id]; }));
+  }
+  // Same idea for a body-weight log, which has no id — a day's entry is already naturally
+  // keyed by its own date (logBodyWeight dedupes same-day entries the exact same way).
+  function mergeWeightLog(localLog, remoteLog){
+    localLog = localLog || []; remoteLog = remoteLog || [];
+    var knownDays = {};
+    localLog.forEach(function(e){ knownDays[e.date.slice(0,10)] = true; });
+    return localLog.concat(remoteLog.filter(function(e){ return !knownDays[e.date.slice(0,10)]; }))
+      .sort(function(a,b){ return new Date(a.date) - new Date(b.date); });
+  }
+  // Adopted on an AUTOMATIC background pull (checkCloudForUpdates) instead of
+  // adoptRemoteState's wholesale replace: merges the append-mostly logs (sessions, foodLog,
+  // dishes, each person's body-weight log) by union rather than letting whichever device's
+  // syncVersion happens to be numerically larger silently drop everything the other device
+  // logged since its own last push. Everything else (profiles, settings, targets...) still
+  // takes the remote's value outright — "which side is newer" is a meaningful question there,
+  // it just isn't for an array of independently-appended records. The merged result isn't
+  // pushed back up immediately (same reasoning as adoptRemoteState) — it goes out whole and
+  // already-repaired on the next real local edit's save().
+  function mergeRemoteState(remote){
+    var merged = ensureRestDuration(ensureBodyWeightLog(ensureBodyProfiles(migrateContent(remote))));
+    merged.sessions = mergeArraysById(state.sessions, merged.sessions);
+    merged.foodLog = mergeArraysById(state.foodLog, merged.foodLog);
+    merged.dishes = mergeArraysById(state.dishes, merged.dishes);
+    state.people.forEach(function(pl){
+      merged.bodyWeightLog[pl.id] = mergeWeightLog((state.bodyWeightLog||{})[pl.id], merged.bodyWeightLog[pl.id]);
+    });
+    state = merged;
+    persistLocally();
+  }
+
   // Runs on load and whenever the app comes back to the foreground (another iPhone may have
-  // pushed a session in the meantime) — pulls the shared doc and adopts it only if its
+  // pushed a session in the meantime) — pulls the shared doc and merges it in only if its
   // syncVersion is actually ahead of what's already here. Skipped mid-workout so a pull
   // racing an in-progress set can't yank the screen out from under you; the next natural
   // check (leaving the session, or reopening later) catches up instead.
@@ -1058,7 +1104,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       lastRemoteInfo = { device: result.device, updatedAtMs: result.updatedAtMs };
       refreshRemoteStatusUI();
       if((result.state.syncVersion||0) > (state.syncVersion||0)){
-        adoptRemoteState(result.state);
+        mergeRemoteState(result.state);
         applyTheme(); render();
       }
     }).catch(function(err){ console.warn("cloud pull failed", err); });
