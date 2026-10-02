@@ -614,7 +614,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b86";
+  var BUILD_VERSION = "b87";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -2538,6 +2538,49 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       '<path d="' + path + '" fill="none" stroke="var(--accent)" stroke-width="2"/>' + dots + labels + '</svg>';
   }
 
+  // Same idea as renderLineChartSvg, but two series (Am/Jab) sharing one set of axes instead
+  // of one merged/summed line — "Nous deux" compares, it doesn't average two people's intake
+  // into a single meaningless curve. Both series are expected to have the same length/dates
+  // (same `days` window from nutritionTrendPoints), so they share one x-scale by index and one
+  // y-scale across both series' combined min/max.
+  function renderDualLineChartSvg(pointsA, pointsB, colorA, colorB, unitSuffix){
+    if(pointsA.length < 2 || pointsB.length < 2) return null;
+    var H=130, W=400, padL=8, padR=8, padT=14, padB=20;
+    var allValues = pointsA.map(function(p){return p.value;}).concat(pointsB.map(function(p){return p.value;}));
+    var min = Math.min.apply(null, allValues), max = Math.max.apply(null, allValues);
+    if(min===max){ min-=1; max+=1; }
+    function X(i, n){ return padL + (i/(n-1)) * (W-padL-padR); }
+    function Y(v){ return padT + (1 - (v-min)/(max-min)) * (H-padT-padB); }
+    function seriesSvg(points, color){
+      var n = points.length;
+      var path = points.map(function(p,i){ return (i===0?"M":"L") + X(i,n).toFixed(1) + "," + Y(p.value).toFixed(1); }).join(" ");
+      var last = points[n-1], lastX = X(n-1,n), lastY = Y(last.value);
+      return '<path d="' + path + '" fill="none" stroke="' + color + '" stroke-width="2"/>' +
+        '<circle cx="' + lastX.toFixed(1) + '" cy="' + lastY.toFixed(1) + '" r="4" fill="' + color + '"/>' +
+        '<text x="' + lastX.toFixed(1) + '" y="' + (lastY-9).toFixed(1) + '" text-anchor="end" fill="' + color + '" font-weight="600">' + last.value + unitSuffix + '</text>';
+    }
+    var labels = '<text x="' + X(0,pointsA.length).toFixed(1) + '" y="' + (H-4) + '">' + fmtDate(pointsA[0].date) + '</text>' +
+      '<text x="' + X(pointsA.length-1,pointsA.length).toFixed(1) + '" y="' + (H-4) + '" text-anchor="end">' + fmtDate(pointsA[pointsA.length-1].date) + '</text>';
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '">' +
+      '<line x1="' + padL + '" y1="' + (H-padB) + '" x2="' + (W-padR) + '" y2="' + (H-padB) + '" stroke="var(--line)"/>' +
+      seriesSvg(pointsA, colorA) + seriesSvg(pointsB, colorB) + labels + '</svg>';
+  }
+
+  // A dual ring (see dualRingSvg) plus a two-color legend underneath, for a continuous goal
+  // (calories/protéines) rather than a session count — "profil incomplet" per person instead
+  // of a bogus "X/undefined" when that person's nutrition target isn't computable yet.
+  function nutrientRingTileHtml(label, vA, goalA, colorA, nameA, vB, goalB, colorB, nameB, unit){
+    function legendPart(v, goal, color, name){
+      return '<span style="color:' + color + '; font-weight:600;">' + escapeAttr(name) + ' ' +
+        (goal==null ? "profil incomplet" : (Math.round(v) + "/" + Math.round(goal) + unit)) + '</span>';
+    }
+    return '<div class="stat-tile" style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;">' +
+      dualRingSvg(vA, goalA||0, colorA, vB, goalB||0, colorB, 72) +
+      '<div class="stack" style="gap:2px; font-size:11.5px; align-items:center;">' + legendPart(vA,goalA,colorA,nameA) + legendPart(vB,goalB,colorB,nameB) + '</div>' +
+      '<div class="l" style="text-align:center;">' + label + '</div>' +
+    '</div>';
+  }
+
   function drawExerciseChart(exId, pid, el){
     var points = [];
     state.sessions.forEach(function(s){
@@ -2702,6 +2745,17 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     // de sens — mis à l'échelle du nombre de jours réellement couverts par la période affichée.
     var daysInPeriod = Math.max(1, Math.round((pEnd - pStart) / 86400000));
     var nutScaled = nut ? { calories: Math.round(nut.calories*daysInPeriod), protein: Math.round(nut.protein*daysInPeriod) } : null;
+    // Per-person breakdown for "Nous deux" — a merged total told you nothing about who's
+    // actually hitting their own goal, hence two rings (one color each) instead.
+    var p1Entries = periodEntries.filter(function(e){ return e.personId==="p1"; });
+    var p2Entries = periodEntries.filter(function(e){ return e.personId==="p2"; });
+    var p1Kcal = p1Entries.reduce(function(a,e){ return a+e.kcal; }, 0);
+    var p2Kcal = p2Entries.reduce(function(a,e){ return a+e.kcal; }, 0);
+    var p1Protein = p1Entries.reduce(function(a,e){ return a+e.protein; }, 0);
+    var p2Protein = p2Entries.reduce(function(a,e){ return a+e.protein; }, 0);
+    var p1Nut = calcNutritionTargets("p1"), p2Nut = calcNutritionTargets("p2");
+    var p1NutScaled = p1Nut ? { calories: Math.round(p1Nut.calories*daysInPeriod), protein: Math.round(p1Nut.protein*daysInPeriod) } : null;
+    var p2NutScaled = p2Nut ? { calories: Math.round(p2Nut.calories*daysInPeriod), protein: Math.round(p2Nut.protein*daysInPeriod) } : null;
 
     var html = '<div class="stack enter-anim" style="margin-top:6px;">';
     html += '<div class="pill-group">' + state.people.map(function(pl){
@@ -2721,10 +2775,20 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     '</div>';
 
     html += '<div class="section-title">' + escapeAttr(personName(pid)) + '</div>';
-    html += '<div class="stat-grid">' +
-      stat(Math.round(eatenKcal) + (nutScaled ? " / " + nutScaled.calories : "") + " kcal", "Calories") +
-      stat(Math.round(eatenProtein) + (nutScaled ? " / " + nutScaled.protein : "") + " g", "Protéines") +
-    '</div>';
+    if(pid === "both"){
+      // Deux anneaux comparables plutôt qu'un total fusionné (même logique que Progrès) :
+      // chacun contre son PROPRE objectif, pas une moyenne ou une somme qui ne dirait pas qui
+      // mange trop ou pas assez.
+      html += '<div class="stat-grid">' +
+        nutrientRingTileHtml("Calories", p1Kcal, p1NutScaled&&p1NutScaled.calories, "var(--p1)", personName("p1"), p2Kcal, p2NutScaled&&p2NutScaled.calories, "var(--p2)", personName("p2"), " kcal") +
+        nutrientRingTileHtml("Protéines", p1Protein, p1NutScaled&&p1NutScaled.protein, "var(--p1)", personName("p1"), p2Protein, p2NutScaled&&p2NutScaled.protein, "var(--p2)", personName("p2"), " g") +
+      '</div>';
+    } else {
+      html += '<div class="stat-grid">' +
+        stat(Math.round(eatenKcal) + (nutScaled ? " / " + nutScaled.calories : "") + " kcal", "Calories") +
+        stat(Math.round(eatenProtein) + (nutScaled ? " / " + nutScaled.protein : "") + " g", "Protéines") +
+      '</div>';
+    }
     if(!nut) html += '<div class="faint">Renseigne le profil de ' + escapeAttr(personNamesJoined(pid)) + ' dans Réglages pour voir aussi ' + (pid==="both"?"leurs":"ses") + ' objectifs.</div>';
 
     if(periodEntries.length){
@@ -2758,15 +2822,32 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     }
 
     html += '<div class="section-title">Tendance (14 derniers jours) — ' + escapeAttr(personName(pid)) + '</div>';
-    var kcalPoints = nutritionTrendPoints(pid, "kcal", 14);
-    var proteinPoints = nutritionTrendPoints(pid, "protein", 14);
-    if(kcalPoints.some(function(p){ return p.value>0; })){
-      html += '<div class="faint" style="font-size:11.5px;">Calories / jour</div>' +
-        '<div class="chart-wrap">' + renderLineChartSvg(kcalPoints, " kcal") + '</div>' +
-        '<div class="faint" style="font-size:11.5px;">Protéines / jour</div>' +
-        '<div class="chart-wrap">' + renderLineChartSvg(proteinPoints, " g") + '</div>';
+    if(pid === "both"){
+      // Une courbe par personne sur le même graphique plutôt que deux graphiques fusionnés —
+      // demandé explicitement pour gagner de la place et pouvoir comparer Am/Jab d'un coup
+      // d'œil, couleur par couleur, plutôt qu'une seule courbe additionnée qui ne dit rien de
+      // qui a mangé quoi.
+      var kcalP1 = nutritionTrendPoints("p1", "kcal", 14), kcalP2 = nutritionTrendPoints("p2", "kcal", 14);
+      var proteinP1 = nutritionTrendPoints("p1", "protein", 14), proteinP2 = nutritionTrendPoints("p2", "protein", 14);
+      if(kcalP1.concat(kcalP2).some(function(p){ return p.value>0; })){
+        html += '<div class="faint" style="font-size:11.5px;">Calories / jour — <span style="color:var(--p1);">' + escapeAttr(personName("p1")) + '</span> · <span style="color:var(--p2);">' + escapeAttr(personName("p2")) + '</span></div>' +
+          '<div class="chart-wrap">' + renderDualLineChartSvg(kcalP1, kcalP2, "var(--p1)", "var(--p2)", " kcal") + '</div>' +
+          '<div class="faint" style="font-size:11.5px;">Protéines / jour — <span style="color:var(--p1);">' + escapeAttr(personName("p1")) + '</span> · <span style="color:var(--p2);">' + escapeAttr(personName("p2")) + '</span></div>' +
+          '<div class="chart-wrap">' + renderDualLineChartSvg(proteinP1, proteinP2, "var(--p1)", "var(--p2)", " g") + '</div>';
+      } else {
+        html += '<div class="faint">Enregistre quelques repas pour voir la tendance.</div>';
+      }
     } else {
-      html += '<div class="faint">Enregistre quelques repas pour voir la tendance.</div>';
+      var kcalPoints = nutritionTrendPoints(pid, "kcal", 14);
+      var proteinPoints = nutritionTrendPoints(pid, "protein", 14);
+      if(kcalPoints.some(function(p){ return p.value>0; })){
+        html += '<div class="faint" style="font-size:11.5px;">Calories / jour</div>' +
+          '<div class="chart-wrap">' + renderLineChartSvg(kcalPoints, " kcal") + '</div>' +
+          '<div class="faint" style="font-size:11.5px;">Protéines / jour</div>' +
+          '<div class="chart-wrap">' + renderLineChartSvg(proteinPoints, " g") + '</div>';
+      } else {
+        html += '<div class="faint">Enregistre quelques repas pour voir la tendance.</div>';
+      }
     }
 
     html += '<div class="section-title">Mes plats</div>';
