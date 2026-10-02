@@ -614,7 +614,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b82";
+  var BUILD_VERSION = "b83";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -1168,6 +1168,14 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
 
   function fmtDate(iso){ var d=new Date(iso); return d.toLocaleDateString("fr-FR",{day:"2-digit",month:"short"}); }
   function fmtDateFull(iso){ var d=new Date(iso); return d.toLocaleDateString("fr-FR",{weekday:"long",day:"2-digit",month:"long"}); }
+  // <input type="datetime-local">'s value format ("YYYY-MM-DDTHH:mm", local time, no
+  // timezone) — round-trips with `new Date(thatString)`, which browsers parse as local time
+  // for this exact shape, same as the input itself interprets what you type into it.
+  function toDatetimeLocalValue(iso){
+    var d = new Date(iso);
+    function pad(n){ return String(n).padStart(2,"0"); }
+    return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate()) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+  }
   function fmtDur(min){ var m=Math.round(min); if(m<60) return m+" min"; return Math.floor(m/60)+"h"+String(m%60).padStart(2,"0"); }
   function round1(n){ return Math.round(n*10)/10; }
   function isoWeekKey(d){
@@ -1937,7 +1945,9 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // ---------- HISTORY ----------
   var historyFilter = "all"; // which workout type is shown — resets on reload, like settingsOpen
   function renderHistory(){
-    var all = state.sessions.slice().reverse();
+    // Sorted by the session's actual date (not insertion order) — otherwise editing a
+    // session's date to backdate it wouldn't move it to where it now belongs in the list.
+    var all = state.sessions.slice().sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
     if(!all.length){
       $view.innerHTML = '<div class="empty">Aucune séance enregistrée pour l’instant.<br>Commence une séance depuis l’onglet Séances.</div>';
       return;
@@ -2022,6 +2032,11 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     function syncFormToClone(){
       var durInput = document.getElementById("edit-duration");
       if(durInput) clone.durationMin = Math.max(1, parseFloat(durInput.value) || clone.durationMin);
+      var dateInput = document.getElementById("edit-date");
+      if(dateInput && dateInput.value){
+        var parsed = new Date(dateInput.value);
+        if(!isNaN(parsed.getTime())) clone.date = parsed.toISOString();
+      }
       if(isVideo) return;
       clone.exercises.forEach(function(e, exIdx){
         var nameEl = sheet.querySelector('[data-edit-name="' + exIdx + '"]');
@@ -2044,8 +2059,13 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
 
     function renderForm(){
       var html = '<h2 class="disp">Modifier la séance</h2>' +
-        '<div class="muted" style="margin-bottom:14px;">' + escapeAttr(clone.workoutName) + ' · ' + fmtDateFull(clone.date) + '</div>';
+        '<div class="muted" style="margin-bottom:14px;">' + escapeAttr(clone.workoutName) + '</div>';
       html += '<div class="stack" style="gap:14px; margin-bottom:18px;">';
+      // Pour les fois où une séance de la veille n'a été saisie que le lendemain matin — on
+      // enregistre toujours "maintenant" en finissant une séance, donc c'est ici qu'on
+      // redate après coup plutôt que de forcer à ressaisir au bon moment.
+      html += '<label class="stack" style="gap:4px;"><span class="faint" style="font-size:12.5px;">Date et heure</span>' +
+        '<input type="datetime-local" id="edit-date" value="' + toDatetimeLocalValue(clone.date) + '" style="width:100%;"></label>';
       html += '<label class="stack" style="gap:4px;"><span class="faint" style="font-size:12.5px;">Durée (minutes)</span>' +
         '<input type="number" min="1" step="1" id="edit-duration" value="' + Math.round(clone.durationMin) + '" style="width:100%;"></label>';
 
