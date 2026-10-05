@@ -614,7 +614,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b93";
+  var BUILD_VERSION = "b94";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -1642,12 +1642,18 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         : '<video src="videos/' + escapeAttr(w.videoFile) + '" controls playsinline preload="metadata" ' +
             'style="width:100%; display:block; background:#000;"></video>';
       $view.innerHTML = '<div class="stack" style="margin-top:6px; padding-bottom:8px;">' +
-        '<div class="row between"><h2 style="margin:0;">' + w.name + '</h2>' +
+        '<div class="row between"><div class="row" style="gap:8px; align-items:center;"><h2 style="margin:0;">' + w.name + '</h2>' +
+          (workoutMuscles(w.id) ? '<button class="icon-btn info-btn" id="course-muscles-btn" type="button" aria-label="Muscles travaillés">' + MUSCLE_BTN_ICON + '</button>' : '') + '</div>' +
         '<button class="btn btn-line btn-sm" id="cancel-session-btn">Annuler</button></div>' +
         '<div class="card" style="padding:0; overflow:hidden;">' + playerHtml + '</div>' +
         '<div class="faint" style="text-align:center;">Appuie sur "Cours terminé" en bas une fois la vidéo finie.</div>' +
       '</div>';
       document.getElementById("cancel-session-btn").addEventListener("click", cancelSession);
+      var courseMusclesBtn = document.getElementById("course-muscles-btn");
+      if(courseMusclesBtn) courseMusclesBtn.addEventListener("click", function(){
+        var map = workoutMuscles(w.id);
+        showMuscleSheet(w.name, "Muscles travaillés", [{ tiers: muscleMapToTiers(map) }], ["Muscle principal","Muscle secondaire","Non sollicité"], muscleNamesHtml(map));
+      });
       renderSessionBar();
       sessionTimerHandle = setInterval(updateSessionBar, 1000);
       return;
@@ -1712,9 +1718,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         ev.stopPropagation();
         var exId = el.getAttribute("data-muscles"), map = EXERCISE_MUSCLES[exId];
         var e = findExercise(w, exId);
-        var names = '<div class="muted" style="font-size:12.5px; line-height:1.6;">' +
-          '<b style="color:' + MUSCLE_COLOR_PRIMARY + ';">Principal</b> : ' + map.primary.join(", ") +
-          (map.secondary.length ? '<br><b style="color:' + MUSCLE_COLOR_SECONDARY + ';">Secondaire</b> : ' + map.secondary.join(", ") : '') + '</div>';
+        var names = muscleNamesHtml(map);
         showMuscleSheet(e ? e.name : "Muscles travaillés", "Muscles travaillés", [{ tiers: exerciseMuscleTiers(exId) }],
           ["Muscle principal","Muscle secondaire","Non sollicité"], names);
       });
@@ -1767,10 +1771,10 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       '</div>';
     }
     var infoBtn = (e.howTo || e.videoClip) ? '<button class="icon-btn info-btn" data-info="' + e.id + '" type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 8v.01"/></svg></button>' : '';
-    // Muscle button next to (i) on Haut/Bas exercises: opens the same body map as Progrès,
+    // Muscle button next to (i) on Haut/Bas/Abdo exercises: opens the same body map as Progrès,
     // colored for this one exercise only (EXERCISE_MUSCLES). Ad-hoc exercises have no mapping.
     var sessWid = state.activeSession && state.activeSession.workoutId;
-    if((sessWid === "haut" || sessWid === "bas") && EXERCISE_MUSCLES[e.id])
+    if((sessWid === "haut" || sessWid === "bas" || sessWid === "abdo") && EXERCISE_MUSCLES[e.id])
       infoBtn += '<button class="icon-btn info-btn" data-muscles="' + e.id + '" type="button" aria-label="Muscles travaillés">' + MUSCLE_BTN_ICON + '</button>';
     var cols = participants.map(function(pl){
       var entry = p.entries[pl.id];
@@ -2379,7 +2383,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
           mark(map.primary, "primary"); mark(map.secondary, "secondary");
         });
       } else {
-        var wmap = WORKOUT_MUSCLES[s.workoutId];
+        var wmap = workoutMuscles(s.workoutId);
         if(wmap){ mark(wmap.primary, "primary"); mark(wmap.secondary, "secondary"); }
       }
     });
@@ -2457,12 +2461,13 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     var t = muscle ? tiers[muscle] : null;
     return t === "primary" ? MUSCLE_COLOR_PRIMARY : t === "secondary" ? MUSCLE_COLOR_SECONDARY : MUSCLE_COLOR_UNTARGETED;
   }
-  function muscleBodySvg(view, tiers, maxWidth, female){
+  function muscleBodySvg(view, tiers, maxWidth, female, editable){
     var mirror = ' transform="translate(200,0) scale(-1,1)"';
     var outline = female ? MUSCLE_BODY_OUTLINE_F : MUSCLE_BODY_OUTLINE;
     var body = outline + ' L100,6 Z';
     var zones = (female ? MUSCLE_ZONES_F : MUSCLE_ZONES)[view].map(function(z){
-      return '<g fill="' + muscleZoneFill(tiers, z.muscle) + '">' +
+      var tap = (editable && z.muscle) ? ' data-muscle-tap="' + escapeAttr(z.muscle) + '" style="cursor:pointer;"' : '';
+      return '<g fill="' + muscleZoneFill(tiers, z.muscle) + '"' + tap + '>' +
         z.d.map(function(d){ return '<path d="' + d + '"/><path d="' + d + '"' + mirror + '/>'; }).join("") + '</g>';
     }).join("");
     return '<svg viewBox="-15 2 230 437" width="100%" style="display:block; max-width:' + (maxWidth||150) + 'px; height:auto;" role="img" aria-label="' + (view==="front"?"Face":"Dos") + '">' +
@@ -2474,11 +2479,11 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   }
   // Face + Dos side by side for one set of tiers. `maxWidth` per figure: ~150 in the zoomed
   // sheet, much smaller for the compact thumbnail in Progrès (labels dropped there too).
-  function muscleMapHtml(tiers, maxWidth, compact, female){
+  function muscleMapHtml(tiers, maxWidth, compact, female, editable){
     function fig(view, label){
       return '<div class="stack" style="flex:1; align-items:center; gap:4px; min-width:0;">' +
         (compact ? '' : '<div class="faint" style="font-size:11px;">' + label + '</div>') +
-        muscleBodySvg(view, tiers, maxWidth, female) + '</div>';
+        muscleBodySvg(view, tiers, maxWidth, female, editable) + '</div>';
     }
     return '<div class="row" style="gap:' + (compact?4:10) + 'px; align-items:flex-start;">' + fig("front","Face") + fig("back","Dos") + '</div>';
   }
@@ -2513,12 +2518,79 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   }
   // Tiers for a single exercise (muscle button in a Haut/Bas session) — primary = red,
   // secondary = yellow, same as the Progrès map, just for this one movement.
-  function exerciseMuscleTiers(exId){
-    var map = EXERCISE_MUSCLES[exId], tiers = {};
-    if(!map) return null;
-    map.secondary.forEach(function(m){ tiers[m] = "secondary"; });
-    map.primary.forEach(function(m){ tiers[m] = "primary"; });
+  function muscleMapToTiers(map){
+    var tiers = {};
+    if(!map) return tiers;
+    (map.secondary||[]).forEach(function(m){ tiers[m] = "secondary"; });
+    (map.primary||[]).forEach(function(m){ tiers[m] = "primary"; });
     return tiers;
+  }
+  function exerciseMuscleTiers(exId){ return EXERCISE_MUSCLES[exId] ? muscleMapToTiers(EXERCISE_MUSCLES[exId]) : null; }
+  // Muscles credited to a session with no per-exercise entries (Five, Danse, the video
+  // courses): what was picked in Réglages if anything (state.workoutMuscles, kept separate
+  // from state.workouts so migrateContent never touches it), else the built-in default.
+  function workoutMuscles(wid){
+    return (state.workoutMuscles && state.workoutMuscles[wid]) || WORKOUT_MUSCLES[wid];
+  }
+  var MUSCLE_GROUPS = ["Épaules","Pectoraux","Biceps","Triceps","Avant-bras","Trapèzes","Dos","Lombaires","Abdominaux","Obliques","Fessiers","Abducteurs","Adducteurs","Quadriceps","Ischio-jambiers","Mollets"];
+  function muscleNamesHtml(map){
+    return '<div class="muted" style="font-size:12.5px; line-height:1.6;">' +
+      '<b style="color:' + MUSCLE_COLOR_PRIMARY + ';">Principal</b> : ' + (map.primary.length ? map.primary.join(", ") : "—") +
+      (map.secondary.length ? '<br><b style="color:' + MUSCLE_COLOR_SECONDARY + ';">Secondaire</b> : ' + map.secondary.join(", ") : '') + '</div>';
+  }
+  // Réglages → Five / Danse: tap a muscle (on the map, or its chip below for the thin zones)
+  // to cycle pas travaillé → un peu → beaucoup → pas travaillé. Saved on every tap.
+  function showMuscleEditor(wid){
+    var overlay = document.getElementById("summary-overlay"), sheet = document.getElementById("summary-sheet");
+    var w = findWorkout(wid);
+    var tiers = muscleMapToTiers(workoutMuscles(wid));
+    function currentMap(){
+      var map = { primary:[], secondary:[] };
+      MUSCLE_GROUPS.forEach(function(m){ if(tiers[m]) map[tiers[m]].push(m); });
+      return map;
+    }
+    function persist(){
+      if(!state.workoutMuscles) state.workoutMuscles = {};
+      state.workoutMuscles[wid] = currentMap();
+      save();
+    }
+    function chip(m){
+      var t = tiers[m];
+      var bg = t==="primary" ? MUSCLE_COLOR_PRIMARY : t==="secondary" ? MUSCLE_COLOR_SECONDARY : "rgba(255,255,255,.07)";
+      var fg = t==="primary" ? "#fff" : t==="secondary" ? "#1f1400" : "var(--ink-soft)";
+      return '<button type="button" data-muscle-tap="' + escapeAttr(m) + '" style="border:none; border-radius:999px; padding:5px 10px; font:inherit; font-size:12px; font-weight:600; background:' + bg + '; color:' + fg + ';">' + escapeAttr(m) + '</button>';
+    }
+    function draw(){
+      var scroll = sheet.scrollTop;
+      sheet.innerHTML = '<h2 class="disp">' + escapeAttr(w ? w.name : wid) + '</h2>' +
+        '<div class="muted" style="margin:2px 0 14px; font-size:13px;">Touche un muscle : 1× un peu travaillé, 2× beaucoup, 3× pas travaillé.</div>' +
+        '<div class="stack" style="gap:14px; margin-bottom:14px;">' +
+          muscleMapHtml(tiers, 150, false, false, true) +
+          muscleLegendHtml() +
+          '<div class="row" style="gap:6px; flex-wrap:wrap;">' + MUSCLE_GROUPS.map(chip).join("") + '</div>' +
+        '</div>' +
+        '<div class="row" style="gap:10px;">' +
+          '<button class="btn btn-ghost btn-block" id="muscle-reset" type="button">Par défaut</button>' +
+          '<button class="btn btn-accent btn-block" id="muscle-ok" type="button">Terminé</button>' +
+        '</div>';
+      sheet.scrollTop = scroll;
+      sheet.querySelectorAll("[data-muscle-tap]").forEach(function(el){
+        el.addEventListener("click", function(ev){
+          ev.stopPropagation();
+          var m = el.getAttribute("data-muscle-tap"), t = tiers[m];
+          if(!t) tiers[m] = "secondary"; else if(t === "secondary") tiers[m] = "primary"; else delete tiers[m];
+          persist(); draw();
+        });
+      });
+      document.getElementById("muscle-reset").addEventListener("click", function(){
+        if(state.workoutMuscles) delete state.workoutMuscles[wid];
+        tiers = muscleMapToTiers(WORKOUT_MUSCLES[wid]);
+        save(); draw();
+      });
+      document.getElementById("muscle-ok").addEventListener("click", function(){ closeOverlay(overlay, sheet); });
+    }
+    draw();
+    overlay.classList.add("show");
   }
   var MUSCLE_BTN_ICON = '<svg viewBox="0 0 24 24"><circle cx="12" cy="4.6" r="2.1"/><path d="M5 9l7 1.6L19 9M12 10.6v4.9M12 15.5l-3.2 5.5M12 15.5l3.2 5.5"/></svg>';
 
@@ -3922,8 +3994,9 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       // exercise-editing accordion.
       if(w.type === "quicklog"){
         html += '<div class="card row between" style="gap:12px;">' +
-          '<div><div class="section-title" style="margin:0;">' + escapeAttr(w.name) + '</div>' +
-          '<div class="faint" style="margin-top:2px;">Durée proposée par défaut au moment de logger.</div></div>' +
+          '<div><div class="row" style="gap:6px; align-items:center;"><div class="section-title" style="margin:0;">' + escapeAttr(w.name) + '</div>' +
+            '<button class="icon-btn info-btn" data-edit-muscles="' + w.id + '" type="button" aria-label="Muscles travaillés">' + MUSCLE_BTN_ICON + '</button></div>' +
+          '<div class="faint" style="margin-top:2px;">Durée proposée par défaut au moment de logger. La silhouette règle les muscles travaillés.</div></div>' +
           '<div class="row" style="gap:4px; flex-shrink:0;">' +
             '<input type="number" data-quicklog-duration="' + w.id + '" min="1" step="5" value="' + w.defaultDurationMin + '" style="width:56px; text-align:center;">' +
             '<span class="muted">min</span>' +
@@ -3971,6 +4044,9 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     refreshRemoteStatusUI();
     document.getElementById("device-name-input").addEventListener("change", function(){ setDeviceName(this.value.trim()); });
 
+    $view.querySelectorAll("[data-edit-muscles]").forEach(function(btn){
+      btn.addEventListener("click", function(){ showMuscleEditor(btn.getAttribute("data-edit-muscles")); });
+    });
     $view.querySelectorAll("[data-toggle-workout]").forEach(function(btn){
       btn.addEventListener("click", function(){
         var card = btn.closest("[data-workout]");
