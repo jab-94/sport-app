@@ -614,7 +614,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b91";
+  var BUILD_VERSION = "b92";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -1707,6 +1707,18 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         showInfo(e.name, e.howTo, e.videoClip);
       });
     });
+    $view.querySelectorAll("[data-muscles]").forEach(function(el){
+      el.addEventListener("click", function(ev){
+        ev.stopPropagation();
+        var exId = el.getAttribute("data-muscles"), map = EXERCISE_MUSCLES[exId];
+        var e = findExercise(w, exId);
+        var names = '<div class="muted" style="font-size:12.5px; line-height:1.6;">' +
+          '<b style="color:' + MUSCLE_COLOR_PRIMARY + ';">Principal</b> : ' + map.primary.join(", ") +
+          (map.secondary.length ? '<br><b style="color:' + MUSCLE_COLOR_SECONDARY + ';">Secondaire</b> : ' + map.secondary.join(", ") : '') + '</div>';
+        showMuscleSheet(e ? e.name : "Muscles travaillés", "Muscles travaillés", [{ tiers: exerciseMuscleTiers(exId) }],
+          ["Muscle principal","Muscle secondaire","Non sollicité"], names);
+      });
+    });
     $view.querySelectorAll("[data-field]").forEach(function(inp){
       inp.addEventListener("input", function(){
         var exId = inp.getAttribute("data-ex"), pid = inp.getAttribute("data-person"), field = inp.getAttribute("data-field");
@@ -1755,6 +1767,11 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       '</div>';
     }
     var infoBtn = (e.howTo || e.videoClip) ? '<button class="icon-btn info-btn" data-info="' + e.id + '" type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 8v.01"/></svg></button>' : '';
+    // Muscle button next to (i) on Haut/Bas exercises: opens the same body map as Progrès,
+    // colored for this one exercise only (EXERCISE_MUSCLES). Ad-hoc exercises have no mapping.
+    var sessWid = state.activeSession && state.activeSession.workoutId;
+    if((sessWid === "haut" || sessWid === "bas") && EXERCISE_MUSCLES[e.id])
+      infoBtn += '<button class="icon-btn info-btn" data-muscles="' + e.id + '" type="button" aria-label="Muscles travaillés">' + MUSCLE_BTN_ICON + '</button>';
     var cols = participants.map(function(pl){
       var entry = p.entries[pl.id];
       var pClass = pl.id==="p1" ? "" : "p2";
@@ -2410,35 +2427,69 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     var t = muscle ? tiers[muscle] : null;
     return t === "primary" ? MUSCLE_COLOR_PRIMARY : t === "secondary" ? MUSCLE_COLOR_SECONDARY : MUSCLE_COLOR_UNTARGETED;
   }
-  function muscleBodySvg(view, tiers){
+  function muscleBodySvg(view, tiers, maxWidth){
     var mirror = ' transform="translate(200,0) scale(-1,1)"';
     var body = MUSCLE_BODY_OUTLINE + ' L100,6 Z';
     var zones = MUSCLE_ZONES[view].map(function(z){
       return '<g fill="' + muscleZoneFill(tiers, z.muscle) + '">' +
         z.d.map(function(d){ return '<path d="' + d + '"/><path d="' + d + '"' + mirror + '/>'; }).join("") + '</g>';
     }).join("");
-    return '<svg viewBox="-15 2 230 437" width="100%" style="display:block; max-width:150px; height:auto;" role="img" aria-label="' + (view==="front"?"Face":"Dos") + '">' +
+    return '<svg viewBox="-15 2 230 437" width="100%" style="display:block; max-width:' + (maxWidth||150) + 'px; height:auto;" role="img" aria-label="' + (view==="front"?"Face":"Dos") + '">' +
       '<g fill="' + MUSCLE_BODY_FILL + '"><path d="' + body + '"/><path d="' + body + '"' + mirror + '/></g>' +
       '<g stroke="' + MUSCLE_BODY_FILL + '" stroke-width="1.8" stroke-linejoin="round">' + zones + '</g>' +
       '<g fill="none" stroke="' + MUSCLE_BODY_LINE + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">' +
         '<path d="' + MUSCLE_BODY_OUTLINE + '"/><path d="' + MUSCLE_BODY_OUTLINE + '"' + mirror + '/></g>' +
     '</svg>';
   }
-  function muscleMapHtml(sessions, pid){
-    var tiers = muscleTiersFor(sessions, pid);
-    return '<div class="row" style="gap:10px;">' +
-      '<div class="stack" style="flex:1; align-items:center; gap:4px;"><div class="faint" style="font-size:11px;">Face</div>' + muscleBodySvg("front", tiers) + '</div>' +
-      '<div class="stack" style="flex:1; align-items:center; gap:4px;"><div class="faint" style="font-size:11px;">Dos</div>' + muscleBodySvg("back", tiers) + '</div>' +
-    '</div>';
-  }
-  function muscleLegendHtml(){
-    function dot(color, label){
-      return '<span class="row" style="gap:5px; align-items:center;"><span style="width:10px; height:10px; border-radius:50%; background:' + color + '; display:inline-block; flex-shrink:0;"></span>' + label + '</span>';
+  // Face + Dos side by side for one set of tiers. `maxWidth` per figure: ~150 in the zoomed
+  // sheet, much smaller for the compact thumbnail in Progrès (labels dropped there too).
+  function muscleMapHtml(tiers, maxWidth, compact){
+    function fig(view, label){
+      return '<div class="stack" style="flex:1; align-items:center; gap:4px; min-width:0;">' +
+        (compact ? '' : '<div class="faint" style="font-size:11px;">' + label + '</div>') +
+        muscleBodySvg(view, tiers, maxWidth) + '</div>';
     }
-    return '<div class="row" style="gap:14px; flex-wrap:wrap; font-size:11.5px;">' +
-      dot(MUSCLE_COLOR_PRIMARY, "Beaucoup travaillé") + dot(MUSCLE_COLOR_SECONDARY, "Un peu travaillé") + dot(MUSCLE_COLOR_UNTARGETED, "Pas travaillé") +
+    return '<div class="row" style="gap:' + (compact?4:10) + 'px; align-items:flex-start;">' + fig("front","Face") + fig("back","Dos") + '</div>';
+  }
+  function muscleLegendHtml(labels, small){
+    labels = labels || ["Beaucoup travaillé","Un peu travaillé","Pas travaillé"];
+    function dot(color, label){
+      return '<span class="row" style="gap:5px; align-items:center;"><span style="width:' + (small?8:10) + 'px; height:' + (small?8:10) + 'px; border-radius:50%; background:' + color + '; display:inline-block; flex-shrink:0;"></span>' + label + '</span>';
+    }
+    return '<div class="row" style="gap:' + (small?10:14) + 'px; flex-wrap:wrap; font-size:' + (small?10.5:11.5) + 'px;' + (small?' color:var(--ink-soft);':'') + '">' +
+      dot(MUSCLE_COLOR_PRIMARY, labels[0]) + dot(MUSCLE_COLOR_SECONDARY, labels[1]) + dot(MUSCLE_COLOR_UNTARGETED, labels[2]) +
     '</div>';
   }
+  // Full-size map in the shared bottom sheet — opened by tapping the compact map in Progrès,
+  // and by the muscle button on each Haut/Bas exercise. groups: [{label, color, tiers}]
+  // (label omitted when there's only one body to show).
+  function showMuscleSheet(title, subtitle, groups, legendLabels, extraHtml){
+    var overlay = document.getElementById("summary-overlay"), sheet = document.getElementById("summary-sheet");
+    sheet.innerHTML = '<h2 class="disp">' + escapeAttr(title) + '</h2>' +
+      (subtitle ? '<div class="muted" style="margin:2px 0 14px; font-size:13px;">' + escapeAttr(subtitle) + '</div>' : '') +
+      '<div class="stack" style="gap:16px; margin-bottom:14px;">' +
+        groups.map(function(g){
+          return '<div class="stack" style="gap:6px;">' +
+            (g.label ? '<div style="font-weight:600; font-size:12.5px; color:' + g.color + ';">' + escapeAttr(g.label) + '</div>' : '') +
+            muscleMapHtml(g.tiers, 150, false) + '</div>';
+        }).join("") +
+        muscleLegendHtml(legendLabels) +
+        (extraHtml || '') +
+      '</div>' +
+      '<button class="btn btn-accent btn-block" id="muscle-ok">Fermer</button>';
+    overlay.classList.add("show");
+    document.getElementById("muscle-ok").addEventListener("click", function(){ closeOverlay(overlay, sheet); });
+  }
+  // Tiers for a single exercise (muscle button in a Haut/Bas session) — primary = red,
+  // secondary = yellow, same as the Progrès map, just for this one movement.
+  function exerciseMuscleTiers(exId){
+    var map = EXERCISE_MUSCLES[exId], tiers = {};
+    if(!map) return null;
+    map.secondary.forEach(function(m){ tiers[m] = "secondary"; });
+    map.primary.forEach(function(m){ tiers[m] = "primary"; });
+    return tiers;
+  }
+  var MUSCLE_BTN_ICON = '<svg viewBox="0 0 24 24"><circle cx="12" cy="4.6" r="2.1"/><path d="M5 9l7 1.6L19 9M12 10.6v4.9M12 15.5l-3.2 5.5M12 15.5l3.2 5.5"/></svg>';
 
   function renderProgress(){
     var sessions = state.sessions;
@@ -2559,20 +2610,23 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
 
     html += '<div class="section-title">Muscles travaillés — ' + escapeAttr(personName(pid)) + (isCurrentP?' · '+periodNow:'') + '</div>';
     if(burnPeriodSessions.length){
-      html += '<div class="card stack" style="gap:16px;">';
-      if(pid === "both"){
-        html += ids.map(function(realPid){
-          var color = realPid==="p2" ? "var(--p2)" : "var(--p1)";
-          return '<div class="stack" style="gap:6px;">' +
-            '<div style="font-weight:600; font-size:12.5px; color:' + color + ';">' + escapeAttr(personName(realPid)) + '</div>' +
-            muscleMapHtml(burnPeriodSessions, realPid) +
-          '</div>';
-        }).join("");
-      } else {
-        html += muscleMapHtml(burnPeriodSessions, pid);
-      }
-      html += muscleLegendHtml();
-      html += '</div>';
+      // Compact thumbnail (small figures + tiny legend) so it doesn't eat the page — the whole
+      // card is a button opening the full-size map in a sheet (showMuscleSheet).
+      var muscleGroups = ids.map(function(realPid){
+        return { label: ids.length > 1 ? personName(realPid) : "", color: realPid==="p2" ? "var(--p2)" : "var(--p1)", tiers: muscleTiersFor(burnPeriodSessions, realPid) };
+      });
+      html += '<div class="card stack" id="muscle-zoom" role="button" tabindex="0" aria-label="Agrandir la carte des muscles" style="gap:10px; cursor:pointer; position:relative;">' +
+        '<span class="icon-btn" style="position:absolute; top:10px; right:10px; width:26px; height:26px; border-radius:50%;"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5M10.5 8v5M8 10.5h5"/></svg></span>' +
+        '<div class="row" style="gap:14px; justify-content:center; align-items:flex-start;">' +
+          muscleGroups.map(function(g){
+            return '<div class="stack" style="gap:4px; align-items:center;">' +
+              (g.label ? '<div style="font-weight:600; font-size:11.5px; color:' + g.color + ';">' + escapeAttr(g.label) + '</div>' : '') +
+              '<div style="width:' + (ids.length > 1 ? 128 : 150) + 'px;">' + muscleMapHtml(g.tiers, ids.length > 1 ? 62 : 72, true) + '</div>' +
+            '</div>';
+          }).join("") +
+        '</div>' +
+        muscleLegendHtml(null, true) +
+      '</div>';
     } else {
       html += '<div class="faint">Aucune séance ' + (isCurrentP?periodNow:periodThen) + ' pour voir les muscles travaillés.</div>';
     }
@@ -2646,6 +2700,10 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     });
     $view.querySelectorAll("[data-period-select]").forEach(function(btn){
       btn.addEventListener("click", function(){ progressPeriod = btn.getAttribute("data-period-select"); renderProgress(); });
+    });
+    var muscleZoomBtn = document.getElementById("muscle-zoom");
+    if(muscleZoomBtn) muscleZoomBtn.addEventListener("click", function(){
+      showMuscleSheet("Muscles travaillés", personName(pid) + " · " + periodLabel(progressPeriod, progressViewDate), muscleGroups);
     });
     document.getElementById("prog-day-prev").addEventListener("click", function(){
       progressViewDate = shiftPeriod(progressPeriod, progressViewDate, -1); renderProgress();
