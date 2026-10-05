@@ -614,7 +614,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b92";
+  var BUILD_VERSION = "b93";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -2423,14 +2423,45 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       { muscle:"Mollets", d:["M60,320 C66,317 74,319 77,326 C79,336 78,350 75,365 C72.5,378 70,388 66,391 C62,392 60,386 59,377 C57.5,362 56,344 56.5,332 C57,325 58,321 60,320 Z"] }
     ]
   };
+  // Female variant (same viewBox/mirroring/zone names): hair falling to the shoulders,
+  // narrower shoulders and arms, marked waist, wider hips, rounded bust. Used in Progrès for
+  // whoever's profile sex is "f" (Am by default) — the per-exercise sheet keeps the male figure.
+  var MUSCLE_BODY_OUTLINE_F = "M100,5 C91.5,5 84.5,8 81.5,15 C78.5,23 78,33 78.5,43 C79,52 77.5,60 74.5,67 C78,69.5 82,69 84.5,67 C84,70 82,71.5 79,72.8 C72,75.5 65,76.5 59.5,79.5 C53,83 50.5,91 50,100 C49.5,110 47,120 45,130 C43,140 39.5,148 36.5,155 C31.5,166 25,179 20,189.5 C17,194.5 14,197.5 11,199.5 C5.9,201.6 0.8,204.2 -0.05,207.6 C-0.9,211 0.8,214.4 2.5,216.1 C5.05,219.5 9.3,222.9 13.55,222.9 C16.1,222.9 16.95,220.3 15.25,217.8 C18.65,216.9 21.2,213.5 22.05,211 C24.6,207.6 27.15,202.5 29.7,199.1 C34.5,191 39.5,182 44,173 C47.5,165.5 51.5,158 55,152 C59,145 62,138 64,130 L66,123 C66.5,135 69,146 71,157 C72,167 67.5,178 62,188 C58,196 55.5,204 55.5,213 C55.5,226 57,245 58.5,262 C60.5,282 60.5,300 60,313 C58.5,322 57,332 57.5,345 C58,365 60.5,390 62.5,407 C62.5,413 60.5,418 58.5,421 C55,424.5 50,427.5 50,431.5 C50,434.5 53,435.5 56.5,435.5 L71,434.5 C74,434.5 75,431 74,427 C73,420 74,415 75,410 C76.5,395 76,380 76,370 C77,350 79,335 80,322 C82,312 84,305 85,298 C87,280 90,262 92,248 C94,236 96.5,228 99,225 L100,224";
+  var MUSCLE_ZONES_F = {
+    front: [
+      { muscle:"Épaules", d:["M80,77.5 C73,78.5 65,78.5 59.5,81 C53.5,84 50.5,91 50,100 C49.7,106 49.2,110 48.8,114 C52.5,112 56.5,108 59.5,103 C61.5,99 62.5,94 63.5,90.5 C64.5,87 67,84.5 70.5,83 C74,81.5 77,80 80,77.5 Z"] },
+      { muscle:"Pectoraux", d:["M71,86 C78,85 88,85 95,85.5 C97.5,86 98,88 98,91 L98,108 C98,117 93.5,123 86,123.5 C77.5,124 70,119.5 67,112 C65,106.5 65,98 66,94 C67,89.5 68.5,86.5 71,86 Z"] },
+      { muscle:"Biceps", d:["M63.5,108 C65.5,113 65,122 63,129.5 C61,137 57.5,143.5 53,147 C49.5,149.5 47,148 46.5,143.5 C46,135 47,125 49,118.5 C51,112 57.5,104.5 63.5,108 Z"] },
+      { muscle:"Avant-bras", d:["M50,153 C53,155.5 51.5,162 47.5,169.5 C42.5,179 37,187 31.5,192 C27.5,195.5 24,194 24,189.5 C25,182.5 29.5,173 35,165 C39.5,158 45.5,150.5 50,153 Z"] },
+      { muscle:"Abdominaux", d:["M98,128 L98,190 C98,193 97,194 95.5,193 C90,187.5 87,178 86,165 C85,152 85,140 86,133 C87,129.5 89.5,127.5 93,127.5 C95.5,127.5 97.5,127.5 98,128 Z"] },
+      { muscle:"Obliques", d:["M82.5,129 C78.5,133 75,140 73,149 C71.5,158 72,166 74,173 C77,171 80,167 81.5,161 C83.5,153 84,140 82.5,129 Z"] },
+      { muscle:"Adducteurs", d:["M67.5,183 C72.5,186 81,190.5 90,195 C94,197 96,200 95,202 C93,205 89,205 84,203 C76.5,200 69.5,195 66.5,189 C65.5,186 65.8,184 67.5,183 Z", "M73,213 C80,210 90,210 96,211.5 C98.5,212.5 98.5,216 97.5,220 C96,232 93.5,244 90.5,255 C89.5,258 87.5,258 86.5,254 C83,241 78,228 72.5,218 C71.5,216 71.5,214 73,213 Z"] },
+      { muscle:"Abducteurs", d:["M59.4,206 C61.1,205.5 61.8,208 61.6,212 C61.3,222 60.8,232 60.3,242 C60.1,245 58.8,245 58.7,242 C58.4,230 58.4,216 58.6,209 C58.7,207 58.9,206.2 59.4,206 Z"] },
+      { muscle:"Quadriceps", d:["M64,217 C67,215.5 69.5,216.5 71.5,219 C77,228 81.5,239 85,251 C87,259 88,269 87,278 C85.5,287 81,293 75.5,293.5 C69.5,294 64.5,287 62.5,275 C60.5,261 60.5,241 61.5,228 C62,222 62.5,218.5 64,217 Z"] }
+    ],
+    back: [
+      { muscle:"Trapèzes", d:["M100,62.5 C95,63 91,64.5 87.5,66.5 C81.5,70 74,74.5 65.5,80.5 L81.5,89 C84.5,97 89,110 92.5,121 C94.5,126 97,131 100,135 Z"] },
+      { muscle:"Épaules", d:["M64.5,81.5 C59,84 55,89 52.5,95.5 C50.8,101 50,107 50.3,113 C56,110 62,107 67.5,103.5 C72.5,99.5 77,94.5 80.5,90 Z"] },
+      { muscle:"Dos", d:["M81.5,91 C78.5,96.5 73,101.5 69,105.5 C69.5,113 69.5,122 69.5,130 C70.5,140 72.5,149 75.5,155 C77,158 79,159 80.5,157 C85,151 90.5,143 97.5,135.5 C92.5,126 88.5,115 85.5,104.5 C84,99.5 82.5,95 81.5,91 Z"] },
+      { muscle:"Triceps", d:["M50.5,115 C56,112.5 62,109.5 67,106.5 C68,112 68,118.5 67,123.5 C64,129.5 60.5,134.5 56.5,139 C55.3,135.5 54.5,132 54,128.5 C51.5,130.5 49,132 46,133 C47,126 48.5,120 50.5,115 Z"] },
+      { muscle:"Lombaires", d:["M100,137.5 C94,144 86,152 80.5,160.5 C83,165 88,170 93,173.5 C95.5,175 98,175.5 100,175.5 Z"] },
+      { muscle:"Obliques", d:["M77.5,162 C81,165.5 85.5,170 89,174.5 C85,174 80,174.5 76,177 C73.5,178.5 72,181 71,183.5 C70.8,176 72.5,169 74.5,165 Z"] },
+      { muscle:"Fessiers", d:["M76.5,176 C83.5,176.5 90,183 94,191 C97,197.5 98,205 96.5,210.5 C94.5,216 88,218.5 79.5,219.5 C72,220.5 65.5,219 64,213 C62.5,205.5 64,195 67,187.5 C69.5,181 72.5,176 76.5,176 Z"] },
+      { muscle:"Abducteurs", d:["M60.5,198 C61.8,205 62,214 61.5,222 C61,229 60.5,235 59.5,241 C58.6,234 58.3,220 58.6,210 C58.8,205 59.5,201 60.5,198 Z"] },
+      { muscle:"Ischio-jambiers", d:["M73.5,223.5 C77.5,223 80.5,224.5 81,229.5 C82.5,243 82,260 80,276 C78.5,287 75.5,296 72.5,300 C69.5,302 66.5,299 65.5,293 C63,281 62,262 62.5,247 C63,236 67,227 73.5,223.5 Z"] },
+      { muscle:"Adducteurs", d:["M84,224 C89,223 94,223 97,224.5 C97.5,229 96,236 94.5,245 C92,258 88,270 84.5,281 C84,266 84.5,248 84,234 C84,229 83.5,226 84,224 Z"] },
+      { muscle:"Mollets", d:["M63,320 C68.5,317.5 75,319.5 77.5,326 C79.5,336 78.5,350 76,365 C74,378 71.5,388 68,391 C64.5,392 62.5,386 61.5,377 C60,362 59,344 59.5,332 C60,325 61,321 63,320 Z"] }
+    ]
+  };
   function muscleZoneFill(tiers, muscle){
     var t = muscle ? tiers[muscle] : null;
     return t === "primary" ? MUSCLE_COLOR_PRIMARY : t === "secondary" ? MUSCLE_COLOR_SECONDARY : MUSCLE_COLOR_UNTARGETED;
   }
-  function muscleBodySvg(view, tiers, maxWidth){
+  function muscleBodySvg(view, tiers, maxWidth, female){
     var mirror = ' transform="translate(200,0) scale(-1,1)"';
-    var body = MUSCLE_BODY_OUTLINE + ' L100,6 Z';
-    var zones = MUSCLE_ZONES[view].map(function(z){
+    var outline = female ? MUSCLE_BODY_OUTLINE_F : MUSCLE_BODY_OUTLINE;
+    var body = outline + ' L100,6 Z';
+    var zones = (female ? MUSCLE_ZONES_F : MUSCLE_ZONES)[view].map(function(z){
       return '<g fill="' + muscleZoneFill(tiers, z.muscle) + '">' +
         z.d.map(function(d){ return '<path d="' + d + '"/><path d="' + d + '"' + mirror + '/>'; }).join("") + '</g>';
     }).join("");
@@ -2438,16 +2469,16 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       '<g fill="' + MUSCLE_BODY_FILL + '"><path d="' + body + '"/><path d="' + body + '"' + mirror + '/></g>' +
       '<g stroke="' + MUSCLE_BODY_FILL + '" stroke-width="1.8" stroke-linejoin="round">' + zones + '</g>' +
       '<g fill="none" stroke="' + MUSCLE_BODY_LINE + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">' +
-        '<path d="' + MUSCLE_BODY_OUTLINE + '"/><path d="' + MUSCLE_BODY_OUTLINE + '"' + mirror + '/></g>' +
+        '<path d="' + outline + '"/><path d="' + outline + '"' + mirror + '/></g>' +
     '</svg>';
   }
   // Face + Dos side by side for one set of tiers. `maxWidth` per figure: ~150 in the zoomed
   // sheet, much smaller for the compact thumbnail in Progrès (labels dropped there too).
-  function muscleMapHtml(tiers, maxWidth, compact){
+  function muscleMapHtml(tiers, maxWidth, compact, female){
     function fig(view, label){
       return '<div class="stack" style="flex:1; align-items:center; gap:4px; min-width:0;">' +
         (compact ? '' : '<div class="faint" style="font-size:11px;">' + label + '</div>') +
-        muscleBodySvg(view, tiers, maxWidth) + '</div>';
+        muscleBodySvg(view, tiers, maxWidth, female) + '</div>';
     }
     return '<div class="row" style="gap:' + (compact?4:10) + 'px; align-items:flex-start;">' + fig("front","Face") + fig("back","Dos") + '</div>';
   }
@@ -2471,7 +2502,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         groups.map(function(g){
           return '<div class="stack" style="gap:6px;">' +
             (g.label ? '<div style="font-weight:600; font-size:12.5px; color:' + g.color + ';">' + escapeAttr(g.label) + '</div>' : '') +
-            muscleMapHtml(g.tiers, 150, false) + '</div>';
+            muscleMapHtml(g.tiers, 150, false, g.female) + '</div>';
         }).join("") +
         muscleLegendHtml(legendLabels) +
         (extraHtml || '') +
@@ -2613,7 +2644,8 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       // Compact thumbnail (small figures + tiny legend) so it doesn't eat the page — the whole
       // card is a button opening the full-size map in a sheet (showMuscleSheet).
       var muscleGroups = ids.map(function(realPid){
-        return { label: ids.length > 1 ? personName(realPid) : "", color: realPid==="p2" ? "var(--p2)" : "var(--p1)", tiers: muscleTiersFor(burnPeriodSessions, realPid) };
+        var prof = state.bodyProfiles && state.bodyProfiles[realPid];
+        return { label: ids.length > 1 ? personName(realPid) : "", color: realPid==="p2" ? "var(--p2)" : "var(--p1)", tiers: muscleTiersFor(burnPeriodSessions, realPid), female: !!(prof && prof.sex === "f") };
       });
       html += '<div class="card stack" id="muscle-zoom" role="button" tabindex="0" aria-label="Agrandir la carte des muscles" style="gap:10px; cursor:pointer; position:relative;">' +
         '<span class="icon-btn" style="position:absolute; top:10px; right:10px; width:26px; height:26px; border-radius:50%;"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5M10.5 8v5M8 10.5h5"/></svg></span>' +
@@ -2621,7 +2653,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
           muscleGroups.map(function(g){
             return '<div class="stack" style="gap:4px; align-items:center;">' +
               (g.label ? '<div style="font-weight:600; font-size:11.5px; color:' + g.color + ';">' + escapeAttr(g.label) + '</div>' : '') +
-              '<div style="width:' + (ids.length > 1 ? 128 : 150) + 'px;">' + muscleMapHtml(g.tiers, ids.length > 1 ? 62 : 72, true) + '</div>' +
+              '<div style="width:' + (ids.length > 1 ? 128 : 150) + 'px;">' + muscleMapHtml(g.tiers, ids.length > 1 ? 62 : 72, true, g.female) + '</div>' +
             '</div>';
           }).join("") +
         '</div>' +
