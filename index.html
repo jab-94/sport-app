@@ -614,7 +614,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b89";
+  var BUILD_VERSION = "b90";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -2305,52 +2305,51 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   }
 
   // ---------- MUSCLE MAP ----------
-  // Which muscle group(s) each structured exercise (Haut/Bas/Abdo) works — intentionally
-  // coarse, this answers "which zones did you train this period", not a kinesiology reference.
+  // Which muscle group(s) each structured exercise (Haut/Bas/Abdo) works, split into the
+  // movement's primary mover(s) and secondary/assisting ones — same red/yellow/gray idiom as
+  // dedicated fitness-tracking apps (a muscle is red the moment it was ever a PRIMARY mover
+  // this period, yellow if only ever secondary, gray if never touched at all). Intentionally
+  // coarse — this answers "which zones did you train this period", not a kinesiology reference.
   // A video/quicklog session (Five, Danse, Cours focus...) has no per-exercise entries to
   // attribute credit to, hence the separate flat WORKOUT_MUSCLES fallback keyed by workout id.
-  var MUSCLE_GROUPS = ["Pectoraux","Dos","Épaules","Biceps","Triceps","Abdominaux","Quadriceps","Ischio-jambiers","Fessiers"];
   var EXERCISE_MUSCLES = {
-    "haut-tirage": ["Dos","Biceps"],
-    "haut-rowing": ["Dos","Biceps"],
-    "haut-chest": ["Pectoraux","Triceps","Épaules"],
-    "haut-shoulder": ["Épaules","Triceps"],
-    "haut-curlmachine": ["Biceps"],
-    "haut-curlbanc": ["Biceps"],
-    "haut-tricepspoulie": ["Triceps"],
-    "haut-tricepsmachine": ["Triceps"],
-    "bas-presse": ["Quadriceps","Fessiers","Ischio-jambiers"],
-    "bas-hipthrust": ["Fessiers","Ischio-jambiers"],
-    "bas-legcurl": ["Ischio-jambiers"],
-    "bas-legext": ["Quadriceps"],
-    "bas-abduction": ["Fessiers"],
-    "bas-kickback": ["Fessiers"],
-    "abdo-kneetuck": ["Abdominaux"],
-    "abdo-scissors": ["Abdominaux"],
-    "abdo-vup": ["Abdominaux"],
-    "abdo-twist": ["Abdominaux"],
-    "abdo-bicycle": ["Abdominaux"],
-    "abdo-jackknife": ["Abdominaux"],
-    "abdo-pikewalk": ["Abdominaux","Épaules"],
-    "abdo-walkout": ["Abdominaux","Épaules"]
+    "haut-tirage": { primary:["Dos"], secondary:["Biceps","Trapèzes"] },
+    "haut-rowing": { primary:["Dos"], secondary:["Biceps","Trapèzes"] },
+    "haut-chest": { primary:["Pectoraux"], secondary:["Triceps","Épaules"] },
+    "haut-shoulder": { primary:["Épaules"], secondary:["Triceps"] },
+    "haut-curlmachine": { primary:["Biceps"], secondary:[] },
+    "haut-curlbanc": { primary:["Biceps"], secondary:[] },
+    "haut-tricepspoulie": { primary:["Triceps"], secondary:[] },
+    "haut-tricepsmachine": { primary:["Triceps"], secondary:[] },
+    "bas-presse": { primary:["Quadriceps"], secondary:["Fessiers","Ischio-jambiers"] },
+    "bas-hipthrust": { primary:["Fessiers"], secondary:["Ischio-jambiers"] },
+    "bas-legcurl": { primary:["Ischio-jambiers"], secondary:[] },
+    "bas-legext": { primary:["Quadriceps"], secondary:[] },
+    "bas-abduction": { primary:["Fessiers"], secondary:[] },
+    "bas-kickback": { primary:["Fessiers"], secondary:[] },
+    "abdo-kneetuck": { primary:["Abdominaux"], secondary:[] },
+    "abdo-scissors": { primary:["Abdominaux"], secondary:[] },
+    "abdo-vup": { primary:["Abdominaux"], secondary:[] },
+    "abdo-twist": { primary:["Abdominaux"], secondary:["Obliques"] },
+    "abdo-bicycle": { primary:["Abdominaux"], secondary:["Obliques"] },
+    "abdo-jackknife": { primary:["Abdominaux"], secondary:[] },
+    "abdo-pikewalk": { primary:["Abdominaux"], secondary:["Épaules"] },
+    "abdo-walkout": { primary:["Abdominaux"], secondary:["Épaules"] }
   };
   var WORKOUT_MUSCLES = {
-    "cours-abdo": ["Abdominaux"],
-    "cours-fessiers": ["Fessiers"],
-    "five": ["Quadriceps","Ischio-jambiers","Fessiers"],
-    "danse": ["Abdominaux","Quadriceps","Fessiers"]
+    "cours-abdo": { primary:["Abdominaux"], secondary:["Obliques"] },
+    "cours-fessiers": { primary:["Fessiers"], secondary:["Ischio-jambiers"] },
+    "five": { primary:["Quadriceps","Mollets"], secondary:["Ischio-jambiers","Fessiers"] },
+    "danse": { primary:["Abdominaux"], secondary:["Quadriceps","Fessiers","Mollets"] }
   };
-  // "Worth", in sets-equivalent, credited to each mapped muscle for one video/quicklog
-  // session — roughly one structured exercise's worth, so these show up without drowning out
-  // (or being drowned out by) a session that actually tracked sets.
-  var WORKOUT_MUSCLE_CREDIT = 3;
-  // Sums sets-equivalent credit per muscle group for one real person over `sessions` (already
-  // filtered to the period/participants by the caller) — same unit (sets) for trackWeight and
-  // bodyweight exercises alike, so high-rep abs work and a heavy weighted lift stay comparable
-  // instead of one unit silently dwarfing the other.
-  function muscleScoresFor(sessions, pid){
-    var scores = {};
-    MUSCLE_GROUPS.forEach(function(m){ scores[m] = 0; });
+  // Tiers per muscle group ("primary"|"secondary", absent = never touched) for one real
+  // person over `sessions` (already filtered to the period/participants by the caller) —
+  // primary always wins once reached, a later secondary hit never downgrades it.
+  function muscleTiersFor(sessions, pid){
+    var tiers = {};
+    function mark(muscles, tier){
+      (muscles||[]).forEach(function(m){ if(tiers[m] !== "primary") tiers[m] = tier; });
+    }
     sessions.forEach(function(s){
       var participants = s.participants || state.people.map(function(p){return p.id;});
       if(participants.indexOf(pid) === -1) return;
@@ -2358,16 +2357,18 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
         s.exercises.forEach(function(e){
           var en = e.entries[pid];
           if(!en || !en.done) return;
-          var muscles = EXERCISE_MUSCLES[e.exId];
-          if(muscles) muscles.forEach(function(m){ scores[m] += (e.sets||1); });
+          var map = EXERCISE_MUSCLES[e.exId];
+          if(!map) return;
+          mark(map.primary, "primary"); mark(map.secondary, "secondary");
         });
       } else {
-        var wm = WORKOUT_MUSCLES[s.workoutId];
-        if(wm) wm.forEach(function(m){ scores[m] += WORKOUT_MUSCLE_CREDIT; });
+        var wmap = WORKOUT_MUSCLES[s.workoutId];
+        if(wmap){ mark(wmap.primary, "primary"); mark(wmap.secondary, "secondary"); }
       }
     });
-    return scores;
+    return tiers;
   }
+  var MUSCLE_COLOR_PRIMARY = "#e5484d", MUSCLE_COLOR_SECONDARY = "#f2b134", MUSCLE_COLOR_UNTARGETED = "var(--surface-2)";
   // Simplified, stylized body outline (front and back share the exact same shape — only the
   // colored zones drawn on top differ) — not an anatomical reference, just a readable "where
   // did this land" silhouette consistent with the app's flat/line-icon style elsewhere.
@@ -2379,38 +2380,71 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       '<path d="M34,95 L50,95 L47,190 L37,190 Z"/>' +
       '<path d="M66,95 L50,95 L53,190 L63,190 Z"/>';
   }
+  // Hand-drawn (not anatomically precise) muscle silhouettes, shaped a bit closer to a real
+  // muscle group than a plain circle/rect — deltoid "caps", two-lobed pecs, a segmented
+  // six-pack rect, a kite-shaped trapezius, a V-shaped lat/back, rounded glutes, capsule
+  // limbs — same spirit as the reference screenshot, hand-coded rather than a traced SVG.
   var MUSCLE_ZONES = {
     front: [
-      { muscle:"Épaules", shape:'<circle cx="26" cy="36" r="7"/><circle cx="74" cy="36" r="7"/>' },
-      { muscle:"Pectoraux", shape:'<ellipse cx="50" cy="46" rx="19" ry="9"/>' },
-      { muscle:"Biceps", shape:'<ellipse cx="22" cy="60" rx="6" ry="14"/><ellipse cx="78" cy="60" rx="6" ry="14"/>' },
-      { muscle:"Abdominaux", shape:'<rect x="40" y="58" width="20" height="34" rx="4"/>' },
-      { muscle:"Quadriceps", shape:'<rect x="36" y="100" width="12" height="55" rx="5"/><rect x="52" y="100" width="12" height="55" rx="5"/>' }
+      { muscle:"Épaules", shape:
+        '<path d="M20,34 C16,36 14,42 16,48 C21,46 26,42 28,36 C25,34 22,33 20,34 Z"/>' +
+        '<path d="M80,34 C84,36 86,42 84,48 C79,46 74,42 72,36 C75,34 78,33 80,34 Z"/>' },
+      { muscle:"Pectoraux", shape:
+        '<path d="M30,38 C38,34 48,36 50,44 C44,50 36,50 30,46 C27,43 28,40 30,38 Z"/>' +
+        '<path d="M70,38 C62,34 52,36 50,44 C56,50 64,50 70,46 C73,43 72,40 70,38 Z"/>' },
+      { muscle:"Biceps", shape:'<rect x="16" y="48" width="9" height="32" rx="4.5"/><rect x="75" y="48" width="9" height="32" rx="4.5"/>' },
+      { muscle:"Abdominaux", shape:'<rect x="41" y="56" width="18" height="36" rx="5"/>' },
+      { muscle:"Obliques", shape:'<path d="M38,58 L41,58 L39,88 L35,86 Z"/><path d="M62,58 L59,58 L61,88 L65,86 Z"/>' },
+      { muscle:"Quadriceps", shape:'<rect x="35" y="98" width="13" height="58" rx="6"/><rect x="52" y="98" width="13" height="58" rx="6"/>' }
     ],
     back: [
-      { muscle:"Dos", shape:'<rect x="37" y="38" width="26" height="40" rx="6"/>' },
-      { muscle:"Triceps", shape:'<ellipse cx="22" cy="60" rx="6" ry="14"/><ellipse cx="78" cy="60" rx="6" ry="14"/>' },
-      { muscle:"Fessiers", shape:'<rect x="36" y="92" width="28" height="16" rx="6"/>' },
-      { muscle:"Ischio-jambiers", shape:'<rect x="36" y="112" width="12" height="40" rx="5"/><rect x="52" y="112" width="12" height="40" rx="5"/>' }
+      { muscle:"Trapèzes", shape:'<path d="M50,30 L62,45 L50,58 L38,45 Z"/>' },
+      { muscle:"Dos", shape:
+        '<path d="M38,46 C34,55 33,68 38,80 L46,76 C44,64 44,54 46,46 Z"/>' +
+        '<path d="M62,46 C66,55 67,68 62,80 L54,76 C56,64 56,54 54,46 Z"/>' },
+      { muscle:"Triceps", shape:'<rect x="16" y="48" width="9" height="32" rx="4.5"/><rect x="75" y="48" width="9" height="32" rx="4.5"/>' },
+      { muscle:"Fessiers", shape:
+        '<path d="M37,90 C34,94 34,102 39,106 C44,108 48,105 48,98 C48,92 43,89 37,90 Z"/>' +
+        '<path d="M63,90 C66,94 66,102 61,106 C56,108 52,105 52,98 C52,92 57,89 63,90 Z"/>' },
+      { muscle:"Ischio-jambiers", shape:'<rect x="35" y="112" width="13" height="42" rx="6"/><rect x="52" y="112" width="13" height="42" rx="6"/>' },
+      { muscle:"Mollets", shape:'<rect x="36" y="158" width="10" height="28" rx="5"/><rect x="54" y="158" width="10" height="28" rx="5"/>' }
     ]
   };
-  function muscleBodySvg(view, scores, maxScore, color){
+  function muscleZoneFill(tiers, muscle){
+    var t = tiers[muscle];
+    return t === "primary" ? MUSCLE_COLOR_PRIMARY : t === "secondary" ? MUSCLE_COLOR_SECONDARY : MUSCLE_COLOR_UNTARGETED;
+  }
+  function muscleBodySvg(view, tiers){
     var zones = MUSCLE_ZONES[view].map(function(z){
-      var v = scores[z.muscle] || 0;
-      var opacity = maxScore>0 ? (0.12 + 0.75*(v/maxScore)) : 0.08;
-      return '<g fill="' + color + '" opacity="' + opacity.toFixed(2) + '">' + z.shape + '</g>';
+      return '<g fill="' + muscleZoneFill(tiers, z.muscle) + '" stroke="var(--line)" stroke-width="0.6">' + z.shape + '</g>';
     }).join("");
-    return '<svg viewBox="0 0 100 200" width="100%" height="150" style="overflow:visible;">' +
+    var abColor = muscleZoneFill(tiers, "Abdominaux");
+    // Six-pack divider lines drawn on top of the abs block only when it's actually colored
+    // (on plain gray they'd just look like noise) — a thin shadow line per "row", same trick
+    // real muscle-map apps use to turn a rect into a recognizable abdominal segment.
+    var abLines = (view==="front" && abColor!==MUSCLE_COLOR_UNTARGETED) ?
+      '<g stroke="#000" stroke-opacity="0.3" stroke-width="1">' +
+        '<line x1="50" y1="58" x2="50" y2="90"/><line x1="43" y1="65" x2="57" y2="65"/>' +
+        '<line x1="43" y1="74" x2="57" y2="74"/><line x1="43" y1="83" x2="57" y2="83"/>' +
+      '</g>' : '';
+    return '<svg viewBox="0 0 100 200" width="100%" height="160" style="overflow:visible;">' +
       '<g fill="none" stroke="var(--ink-faint)" stroke-width="1.5">' + bodyOutlinePaths() + '</g>' +
-      zones +
+      zones + abLines +
     '</svg>';
   }
-  function muscleMapHtml(sessions, pid, color){
-    var scores = muscleScoresFor(sessions, pid);
-    var maxScore = Math.max.apply(null, MUSCLE_GROUPS.map(function(m){ return scores[m]; }).concat([0]));
+  function muscleMapHtml(sessions, pid){
+    var tiers = muscleTiersFor(sessions, pid);
     return '<div class="row" style="gap:10px;">' +
-      '<div class="stack" style="flex:1; align-items:center; gap:4px;"><div class="faint" style="font-size:11px;">Face</div>' + muscleBodySvg("front", scores, maxScore, color) + '</div>' +
-      '<div class="stack" style="flex:1; align-items:center; gap:4px;"><div class="faint" style="font-size:11px;">Dos</div>' + muscleBodySvg("back", scores, maxScore, color) + '</div>' +
+      '<div class="stack" style="flex:1; align-items:center; gap:4px;"><div class="faint" style="font-size:11px;">Face</div>' + muscleBodySvg("front", tiers) + '</div>' +
+      '<div class="stack" style="flex:1; align-items:center; gap:4px;"><div class="faint" style="font-size:11px;">Dos</div>' + muscleBodySvg("back", tiers) + '</div>' +
+    '</div>';
+  }
+  function muscleLegendHtml(){
+    function dot(color, label){
+      return '<span class="row" style="gap:5px; align-items:center;"><span style="width:10px; height:10px; border-radius:50%; background:' + color + '; display:inline-block; flex-shrink:0;"></span>' + label + '</span>';
+    }
+    return '<div class="row" style="gap:14px; flex-wrap:wrap; font-size:11.5px;">' +
+      dot(MUSCLE_COLOR_PRIMARY, "Beaucoup travaillé") + dot(MUSCLE_COLOR_SECONDARY, "Un peu travaillé") + dot(MUSCLE_COLOR_UNTARGETED, "Pas travaillé") +
     '</div>';
   }
 
@@ -2533,19 +2567,20 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
 
     html += '<div class="section-title">Muscles travaillés — ' + escapeAttr(personName(pid)) + (isCurrentP?' · '+periodNow:'') + '</div>';
     if(burnPeriodSessions.length){
+      html += '<div class="card stack" style="gap:16px;">';
       if(pid === "both"){
-        html += '<div class="card stack" style="gap:16px;">' +
-          ids.map(function(realPid){
-            var color = realPid==="p2" ? "var(--p2)" : "var(--p1)";
-            return '<div class="stack" style="gap:6px;">' +
-              '<div style="font-weight:600; font-size:12.5px; color:' + color + ';">' + escapeAttr(personName(realPid)) + '</div>' +
-              muscleMapHtml(burnPeriodSessions, realPid, color) +
-            '</div>';
-          }).join("") +
-        '</div>';
+        html += ids.map(function(realPid){
+          var color = realPid==="p2" ? "var(--p2)" : "var(--p1)";
+          return '<div class="stack" style="gap:6px;">' +
+            '<div style="font-weight:600; font-size:12.5px; color:' + color + ';">' + escapeAttr(personName(realPid)) + '</div>' +
+            muscleMapHtml(burnPeriodSessions, realPid) +
+          '</div>';
+        }).join("");
       } else {
-        html += '<div class="card">' + muscleMapHtml(burnPeriodSessions, pid, "var(--accent)") + '</div>';
+        html += muscleMapHtml(burnPeriodSessions, pid);
       }
+      html += muscleLegendHtml();
+      html += '</div>';
     } else {
       html += '<div class="faint">Aucune séance ' + (isCurrentP?periodNow:periodThen) + ' pour voir les muscles travaillés.</div>';
     }
