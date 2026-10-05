@@ -614,7 +614,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b88";
+  var BUILD_VERSION = "b89";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -2303,6 +2303,117 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     }
     return sum;
   }
+
+  // ---------- MUSCLE MAP ----------
+  // Which muscle group(s) each structured exercise (Haut/Bas/Abdo) works — intentionally
+  // coarse, this answers "which zones did you train this period", not a kinesiology reference.
+  // A video/quicklog session (Five, Danse, Cours focus...) has no per-exercise entries to
+  // attribute credit to, hence the separate flat WORKOUT_MUSCLES fallback keyed by workout id.
+  var MUSCLE_GROUPS = ["Pectoraux","Dos","Épaules","Biceps","Triceps","Abdominaux","Quadriceps","Ischio-jambiers","Fessiers"];
+  var EXERCISE_MUSCLES = {
+    "haut-tirage": ["Dos","Biceps"],
+    "haut-rowing": ["Dos","Biceps"],
+    "haut-chest": ["Pectoraux","Triceps","Épaules"],
+    "haut-shoulder": ["Épaules","Triceps"],
+    "haut-curlmachine": ["Biceps"],
+    "haut-curlbanc": ["Biceps"],
+    "haut-tricepspoulie": ["Triceps"],
+    "haut-tricepsmachine": ["Triceps"],
+    "bas-presse": ["Quadriceps","Fessiers","Ischio-jambiers"],
+    "bas-hipthrust": ["Fessiers","Ischio-jambiers"],
+    "bas-legcurl": ["Ischio-jambiers"],
+    "bas-legext": ["Quadriceps"],
+    "bas-abduction": ["Fessiers"],
+    "bas-kickback": ["Fessiers"],
+    "abdo-kneetuck": ["Abdominaux"],
+    "abdo-scissors": ["Abdominaux"],
+    "abdo-vup": ["Abdominaux"],
+    "abdo-twist": ["Abdominaux"],
+    "abdo-bicycle": ["Abdominaux"],
+    "abdo-jackknife": ["Abdominaux"],
+    "abdo-pikewalk": ["Abdominaux","Épaules"],
+    "abdo-walkout": ["Abdominaux","Épaules"]
+  };
+  var WORKOUT_MUSCLES = {
+    "cours-abdo": ["Abdominaux"],
+    "cours-fessiers": ["Fessiers"],
+    "five": ["Quadriceps","Ischio-jambiers","Fessiers"],
+    "danse": ["Abdominaux","Quadriceps","Fessiers"]
+  };
+  // "Worth", in sets-equivalent, credited to each mapped muscle for one video/quicklog
+  // session — roughly one structured exercise's worth, so these show up without drowning out
+  // (or being drowned out by) a session that actually tracked sets.
+  var WORKOUT_MUSCLE_CREDIT = 3;
+  // Sums sets-equivalent credit per muscle group for one real person over `sessions` (already
+  // filtered to the period/participants by the caller) — same unit (sets) for trackWeight and
+  // bodyweight exercises alike, so high-rep abs work and a heavy weighted lift stay comparable
+  // instead of one unit silently dwarfing the other.
+  function muscleScoresFor(sessions, pid){
+    var scores = {};
+    MUSCLE_GROUPS.forEach(function(m){ scores[m] = 0; });
+    sessions.forEach(function(s){
+      var participants = s.participants || state.people.map(function(p){return p.id;});
+      if(participants.indexOf(pid) === -1) return;
+      if(s.exercises && s.exercises.length){
+        s.exercises.forEach(function(e){
+          var en = e.entries[pid];
+          if(!en || !en.done) return;
+          var muscles = EXERCISE_MUSCLES[e.exId];
+          if(muscles) muscles.forEach(function(m){ scores[m] += (e.sets||1); });
+        });
+      } else {
+        var wm = WORKOUT_MUSCLES[s.workoutId];
+        if(wm) wm.forEach(function(m){ scores[m] += WORKOUT_MUSCLE_CREDIT; });
+      }
+    });
+    return scores;
+  }
+  // Simplified, stylized body outline (front and back share the exact same shape — only the
+  // colored zones drawn on top differ) — not an anatomical reference, just a readable "where
+  // did this land" silhouette consistent with the app's flat/line-icon style elsewhere.
+  function bodyOutlinePaths(){
+    return '<circle cx="50" cy="16" r="11"/>' +
+      '<path d="M30,33 L70,33 L66,95 L34,95 Z"/>' +
+      '<path d="M30,33 L22,33 L18,110 L26,110 Z"/>' +
+      '<path d="M70,33 L78,33 L82,110 L74,110 Z"/>' +
+      '<path d="M34,95 L50,95 L47,190 L37,190 Z"/>' +
+      '<path d="M66,95 L50,95 L53,190 L63,190 Z"/>';
+  }
+  var MUSCLE_ZONES = {
+    front: [
+      { muscle:"Épaules", shape:'<circle cx="26" cy="36" r="7"/><circle cx="74" cy="36" r="7"/>' },
+      { muscle:"Pectoraux", shape:'<ellipse cx="50" cy="46" rx="19" ry="9"/>' },
+      { muscle:"Biceps", shape:'<ellipse cx="22" cy="60" rx="6" ry="14"/><ellipse cx="78" cy="60" rx="6" ry="14"/>' },
+      { muscle:"Abdominaux", shape:'<rect x="40" y="58" width="20" height="34" rx="4"/>' },
+      { muscle:"Quadriceps", shape:'<rect x="36" y="100" width="12" height="55" rx="5"/><rect x="52" y="100" width="12" height="55" rx="5"/>' }
+    ],
+    back: [
+      { muscle:"Dos", shape:'<rect x="37" y="38" width="26" height="40" rx="6"/>' },
+      { muscle:"Triceps", shape:'<ellipse cx="22" cy="60" rx="6" ry="14"/><ellipse cx="78" cy="60" rx="6" ry="14"/>' },
+      { muscle:"Fessiers", shape:'<rect x="36" y="92" width="28" height="16" rx="6"/>' },
+      { muscle:"Ischio-jambiers", shape:'<rect x="36" y="112" width="12" height="40" rx="5"/><rect x="52" y="112" width="12" height="40" rx="5"/>' }
+    ]
+  };
+  function muscleBodySvg(view, scores, maxScore, color){
+    var zones = MUSCLE_ZONES[view].map(function(z){
+      var v = scores[z.muscle] || 0;
+      var opacity = maxScore>0 ? (0.12 + 0.75*(v/maxScore)) : 0.08;
+      return '<g fill="' + color + '" opacity="' + opacity.toFixed(2) + '">' + z.shape + '</g>';
+    }).join("");
+    return '<svg viewBox="0 0 100 200" width="100%" height="150" style="overflow:visible;">' +
+      '<g fill="none" stroke="var(--ink-faint)" stroke-width="1.5">' + bodyOutlinePaths() + '</g>' +
+      zones +
+    '</svg>';
+  }
+  function muscleMapHtml(sessions, pid, color){
+    var scores = muscleScoresFor(sessions, pid);
+    var maxScore = Math.max.apply(null, MUSCLE_GROUPS.map(function(m){ return scores[m]; }).concat([0]));
+    return '<div class="row" style="gap:10px;">' +
+      '<div class="stack" style="flex:1; align-items:center; gap:4px;"><div class="faint" style="font-size:11px;">Face</div>' + muscleBodySvg("front", scores, maxScore, color) + '</div>' +
+      '<div class="stack" style="flex:1; align-items:center; gap:4px;"><div class="faint" style="font-size:11px;">Dos</div>' + muscleBodySvg("back", scores, maxScore, color) + '</div>' +
+    '</div>';
+  }
+
   function renderProgress(){
     var sessions = state.sessions;
     var pid = progressPerson;
@@ -2418,6 +2529,25 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       }).join("") + '</div>';
     } else {
       html += '<div class="empty">Aucune séance ' + (isCurrentP?periodNow:periodThen) + ' pour ' + escapeAttr(personName(pid)) + '.</div>';
+    }
+
+    html += '<div class="section-title">Muscles travaillés — ' + escapeAttr(personName(pid)) + (isCurrentP?' · '+periodNow:'') + '</div>';
+    if(burnPeriodSessions.length){
+      if(pid === "both"){
+        html += '<div class="card stack" style="gap:16px;">' +
+          ids.map(function(realPid){
+            var color = realPid==="p2" ? "var(--p2)" : "var(--p1)";
+            return '<div class="stack" style="gap:6px;">' +
+              '<div style="font-weight:600; font-size:12.5px; color:' + color + ';">' + escapeAttr(personName(realPid)) + '</div>' +
+              muscleMapHtml(burnPeriodSessions, realPid, color) +
+            '</div>';
+          }).join("") +
+        '</div>';
+      } else {
+        html += '<div class="card">' + muscleMapHtml(burnPeriodSessions, pid, "var(--accent)") + '</div>';
+      }
+    } else {
+      html += '<div class="faint">Aucune séance ' + (isCurrentP?periodNow:periodThen) + ' pour voir les muscles travaillés.</div>';
     }
 
     html += '<div class="section-title">Tendance calories brûlées (14 derniers jours) — ' + escapeAttr(personName(pid)) + '</div>';
