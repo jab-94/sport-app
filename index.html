@@ -614,7 +614,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b94";
+  var BUILD_VERSION = "b95";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -2389,8 +2389,10 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     });
     return tiers;
   }
-  var MUSCLE_COLOR_PRIMARY = "#e5484d", MUSCLE_COLOR_SECONDARY = "#f2b134", MUSCLE_COLOR_UNTARGETED = "#6e6e73";
-  var MUSCLE_BODY_FILL = "#0b0b0d", MUSCLE_BODY_LINE = "#b8b8bc";
+  // Gym-machine placard style (user's reference photo): white body, muscles separated by
+  // black lines, worked muscles in orange-red (primary) / light salmon (secondary).
+  var MUSCLE_COLOR_PRIMARY = "#e8472c", MUSCLE_COLOR_SECONDARY = "#f6a98c", MUSCLE_COLOR_UNTARGETED = "#f4f4f5";
+  var MUSCLE_BODY_FILL = "#e4e4e7", MUSCLE_BODY_LINE = "#0b0b0d", MUSCLE_GAP = "#0b0b0d";
   // Organic silhouette + muscle shapes modelled on the reference screenshots the user sent
   // (Garmin-style map): a black body with a light-gray outline, muscles as rounded blobs
   // nearly tiling the body, separated by thin black gaps (each zone is stroked with the body
@@ -2407,6 +2409,9 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       { muscle:"Biceps", d:["M60,107 C62.5,112 62,122 59.5,129.5 C57,137.5 52.5,144.5 47,148 C42.5,150.5 39.5,148.5 39,143.5 C38.5,135 39.5,125 42,118 C44.5,111 53,103 60,107 Z"] },
       { muscle:"Avant-bras", d:["M43,152.5 C46.5,155 45,162 40.5,170 C35,180 29,188 23,193.5 C18.5,197 14.5,195.5 14.5,190.5 C15.5,183 20.5,173 26.5,165 C31.5,157.5 38,150 43,152.5 Z"] },
       { muscle:"Abdominaux", d:["M97.5,123 L97.5,193 C97.5,196 96.5,197 95,196 C89,190 85,180 83.5,165 C82,150 82,135 83,128 C84,124 87,122 91,122 C94,122 97,122 97.5,123 Z"] },
+      { muscle:null, line:true, d:["M83,140 C88,141.5 93,141.5 97.5,140.5", "M82.7,157 C88,158.5 93,158.5 97.5,157.5", "M84,174 C88.5,175.5 93,175.5 97.5,174.5"] },
+      { muscle:"Mollets", d:["M66,322 C71,321 76,326 77,334 C78,346 76,360 73,372 C71,379 69,382 67,380 C64,372 63,358 63,345 C63,334 63.5,325 66,322 Z"] },
+      { muscle:null, d:["M58,325 C60,323 61.5,325 61.5,330 C61.5,345 60.8,360 60,372 C59.5,376 58,376 57.5,372 C56.2,358 55.6,343 56,333 C56.3,328 57,325.5 58,325 Z"] },
       { muscle:"Obliques", d:["M80,126 C75,130 70,138 67.5,150 C65.5,160 66,170 69,178 C72,176 76,172 78.5,166 C81,158 81.5,140 80,126 Z"] },
       { muscle:"Adducteurs", d:["M65,180 C70,183 80,188 90,193 C94,195 96,198 95,200 C93,203 89,203 84,201 C76,198 68,192 64,186 C63,183 63,181 65,180 Z", "M73,210 C80,207 90,207 96,208.5 C98.5,209.5 98.5,213 97.5,217 C96,229 93.5,241 90.5,252 C89.5,255 87.5,255 86.5,251 C83,238 78,225 72.5,215 C71.5,213 71.5,211 73,210 Z"] },
       { muscle:"Abducteurs", d:["M58.6,204 C60.3,203.5 61,206 60.8,210 C60.5,220 60,230 59.5,240 C59.3,243 58,243 57.9,240 C57.6,228 57.6,214 57.8,207 C57.9,205 58.1,204.2 58.6,204 Z"] },
@@ -2424,6 +2429,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       { muscle:"Abducteurs", d:["M63,182 C65.5,190 66,200 66,212 C66,222 63,232 60,240 C58.5,232 58.5,214 59,200 C59.5,193 61,187 63,182 Z"] },
       { muscle:"Ischio-jambiers", d:["M73,219 C77,218.5 80,220 80.5,225 C82,240 81.5,258 79.5,275 C78,286 75,296 71.5,300 C68.5,302 65.5,299 64.5,293 C62,280 61,260 61.5,244 C62,232 66,223 73,219 Z"] },
       { muscle:"Adducteurs", d:["M83,219 C88,218 94,218 97,219.5 C97.5,224 96,232 94,242 C91,256 87,270 83,282 C82.5,265 83.5,245 83,230 C83,225 82.5,221 83,219 Z"] },
+      { muscle:"Avant-bras", d:["M43,152.5 C46.5,155 45,162 40.5,170 C35,180 29,188 23,193.5 C18.5,197 14.5,195.5 14.5,190.5 C15.5,183 20.5,173 26.5,165 C31.5,157.5 38,150 43,152.5 Z"] },
       { muscle:"Mollets", d:["M60,320 C66,317 74,319 77,326 C79,336 78,350 75,365 C72.5,378 70,388 66,391 C62,392 60,386 59,377 C57.5,362 56,344 56.5,332 C57,325 58,321 60,320 Z"] }
     ]
   };
@@ -2438,6 +2444,9 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       { muscle:"Biceps", d:["M63.5,108 C65.5,113 65,122 63,129.5 C61,137 57.5,143.5 53,147 C49.5,149.5 47,148 46.5,143.5 C46,135 47,125 49,118.5 C51,112 57.5,104.5 63.5,108 Z"] },
       { muscle:"Avant-bras", d:["M50,153 C53,155.5 51.5,162 47.5,169.5 C42.5,179 37,187 31.5,192 C27.5,195.5 24,194 24,189.5 C25,182.5 29.5,173 35,165 C39.5,158 45.5,150.5 50,153 Z"] },
       { muscle:"Abdominaux", d:["M98,128 L98,190 C98,193 97,194 95.5,193 C90,187.5 87,178 86,165 C85,152 85,140 86,133 C87,129.5 89.5,127.5 93,127.5 C95.5,127.5 97.5,127.5 98,128 Z"] },
+      { muscle:null, line:true, d:["M85.6,145 C89.5,146.3 94,146.3 98,145.5", "M85.4,161 C89.5,162.3 94,162.3 98,161.5", "M86.8,177 C90.5,178.3 94,178.3 98,177.5"] },
+      { muscle:"Mollets", d:["M69.5,322 C74,321 77.5,326 78.5,334 C79.5,346 77.5,360 74.5,372 C72.5,379 70.5,382 68.5,380 C66,372 65.5,358 65.5,345 C65.5,334 66.5,325 69.5,322 Z"] },
+      { muscle:null, d:["M61.5,325 C63.2,323 64.3,325 64.3,330 C64.3,345 63.6,360 62.8,372 C62.4,376 61.1,376 60.7,372 C59.6,358 59.1,343 59.5,333 C59.8,328 60.5,325.5 61.5,325 Z"] },
       { muscle:"Obliques", d:["M82.5,129 C78.5,133 75,140 73,149 C71.5,158 72,166 74,173 C77,171 80,167 81.5,161 C83.5,153 84,140 82.5,129 Z"] },
       { muscle:"Adducteurs", d:["M67.5,183 C72.5,186 81,190.5 90,195 C94,197 96,200 95,202 C93,205 89,205 84,203 C76.5,200 69.5,195 66.5,189 C65.5,186 65.8,184 67.5,183 Z", "M73,213 C80,210 90,210 96,211.5 C98.5,212.5 98.5,216 97.5,220 C96,232 93.5,244 90.5,255 C89.5,258 87.5,258 86.5,254 C83,241 78,228 72.5,218 C71.5,216 71.5,214 73,213 Z"] },
       { muscle:"Abducteurs", d:["M59.4,206 C61.1,205.5 61.8,208 61.6,212 C61.3,222 60.8,232 60.3,242 C60.1,245 58.8,245 58.7,242 C58.4,230 58.4,216 58.6,209 C58.7,207 58.9,206.2 59.4,206 Z"] },
@@ -2454,6 +2463,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       { muscle:"Abducteurs", d:["M60.5,198 C61.8,205 62,214 61.5,222 C61,229 60.5,235 59.5,241 C58.6,234 58.3,220 58.6,210 C58.8,205 59.5,201 60.5,198 Z"] },
       { muscle:"Ischio-jambiers", d:["M73.5,223.5 C77.5,223 80.5,224.5 81,229.5 C82.5,243 82,260 80,276 C78.5,287 75.5,296 72.5,300 C69.5,302 66.5,299 65.5,293 C63,281 62,262 62.5,247 C63,236 67,227 73.5,223.5 Z"] },
       { muscle:"Adducteurs", d:["M84,224 C89,223 94,223 97,224.5 C97.5,229 96,236 94.5,245 C92,258 88,270 84.5,281 C84,266 84.5,248 84,234 C84,229 83.5,226 84,224 Z"] },
+      { muscle:"Avant-bras", d:["M50,153 C53,155.5 51.5,162 47.5,169.5 C42.5,179 37,187 31.5,192 C27.5,195.5 24,194 24,189.5 C25,182.5 29.5,173 35,165 C39.5,158 45.5,150.5 50,153 Z"] },
       { muscle:"Mollets", d:["M63,320 C68.5,317.5 75,319.5 77.5,326 C79.5,336 78.5,350 76,365 C74,378 71.5,388 68,391 C64.5,392 62.5,386 61.5,377 C60,362 59,344 59.5,332 C60,325 61,321 63,320 Z"] }
     ]
   };
@@ -2466,14 +2476,16 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     var outline = female ? MUSCLE_BODY_OUTLINE_F : MUSCLE_BODY_OUTLINE;
     var body = outline + ' L100,6 Z';
     var zones = (female ? MUSCLE_ZONES_F : MUSCLE_ZONES)[view].map(function(z){
+      if(z.line) return '<g fill="none" stroke-width="1.5" stroke-linecap="round">' +
+        z.d.map(function(d){ return '<path d="' + d + '"/><path d="' + d + '"' + mirror + '/>'; }).join("") + '</g>';
       var tap = (editable && z.muscle) ? ' data-muscle-tap="' + escapeAttr(z.muscle) + '" style="cursor:pointer;"' : '';
       return '<g fill="' + muscleZoneFill(tiers, z.muscle) + '"' + tap + '>' +
         z.d.map(function(d){ return '<path d="' + d + '"/><path d="' + d + '"' + mirror + '/>'; }).join("") + '</g>';
     }).join("");
     return '<svg viewBox="-15 2 230 437" width="100%" style="display:block; max-width:' + (maxWidth||150) + 'px; height:auto;" role="img" aria-label="' + (view==="front"?"Face":"Dos") + '">' +
       '<g fill="' + MUSCLE_BODY_FILL + '"><path d="' + body + '"/><path d="' + body + '"' + mirror + '/></g>' +
-      '<g stroke="' + MUSCLE_BODY_FILL + '" stroke-width="1.8" stroke-linejoin="round">' + zones + '</g>' +
-      '<g fill="none" stroke="' + MUSCLE_BODY_LINE + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">' +
+      '<g stroke="' + MUSCLE_GAP + '" stroke-width="1.8" stroke-linejoin="round">' + zones + '</g>' +
+      '<g fill="none" stroke="' + MUSCLE_BODY_LINE + '" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round">' +
         '<path d="' + outline + '"/><path d="' + outline + '"' + mirror + '/></g>' +
     '</svg>';
   }
