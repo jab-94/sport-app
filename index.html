@@ -304,15 +304,26 @@ nav#tabs{
   opacity:0; pointer-events:none;
 }
 #tab-highlight.show{opacity:1;}
-nav#tabs button{
+/* b98 : barre d'onglets du paquet @onlymoein/liquidglass (vendor/, chargée par loadGlassTabs()).
+   nav#tabs garde sa place et ses mesures (--navbar-h, safe-area : voir les bugs iOS du CLAUDE.md),
+   mais n'a plus de fond propre : c'est la barre du paquet qui fait le verre. Si le chargement
+   échoue, la barre d'origine reste affichée telle quelle. */
+nav#tabs.lg-on{
+  background:none; backdrop-filter:none; -webkit-backdrop-filter:none; border:0; box-shadow:none;
+  padding:0; overflow:visible; justify-content:center;
+}
+nav#tabs.lg-on > button, nav#tabs.lg-on > #tab-highlight{display:none;}
+nav#tabs.lg-on > .lg-host{display:flex; justify-content:center; width:100%;}
+nav#tabs .lg-tab-bar[data-icons]{--lg-tab-width:min(86px, calc((100vw - 50px) / 5)); --lg-tab-accent:var(--accent);}
+nav#tabs > button{
   position:relative; z-index:1;
   flex:1; background:none; border:none; display:flex; flex-direction:column; align-items:center; gap:4px;
   padding:8px 2px; color:var(--ink-faint); font-size:10.5px; font-weight:500; border-radius:18px;
   transition:color .2s;
 }
-nav#tabs button svg{width:21px;height:21px;stroke:var(--ink-faint); fill:none; stroke-width:1.8; transition:stroke .2s;}
-nav#tabs button.active{color:var(--accent);}
-nav#tabs button.active svg{stroke:var(--accent);}
+nav#tabs > button svg{width:21px;height:21px;stroke:var(--ink-faint); fill:none; stroke-width:1.8; transition:stroke .2s;}
+nav#tabs > button.active{color:var(--accent);}
+nav#tabs > button.active svg{stroke:var(--accent);}
 
 .card{
   background:var(--glass-bg); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
@@ -614,7 +625,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b97";
+  var BUILD_VERSION = "b98";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -1342,6 +1353,37 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     render();
   });
 
+  // b98 : barre d'onglets Liquid Glass (@onlymoein/liquidglass, React embarqué dans vendor/).
+  // Mêmes onglets et mêmes icônes que les boutons de nav#tabs, qui restent dans le HTML comme
+  // solution de repli si le chargement échoue.
+  var glassTabs = null;
+  function currentNavTab(){ return state.currentTab === "session" ? "home" : state.currentTab; }
+  function loadGlassTabs(){
+    var link = document.createElement("link");
+    link.rel = "stylesheet"; link.href = "vendor/liquidglass.css";
+    document.head.insertBefore(link, document.head.firstChild);
+    import("./vendor/liquidglass.js").then(function(lg){
+      var h = lg.h;
+      var items = Array.prototype.map.call($tabs.querySelectorAll("button[data-tab]"), function(b){
+        var svg = b.querySelector("svg");
+        var label = Array.prototype.filter.call(b.childNodes, function(n){ return n.nodeType === 3; })
+          .map(function(n){ return n.textContent; }).join("").trim();
+        return { value: b.getAttribute("data-tab"), label: label,
+          icon: h("svg", { viewBox: "0 0 24 24", width: 26, height: 26, fill: "none", stroke: "currentColor",
+            strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true,
+            dangerouslySetInnerHTML: { __html: svg ? svg.innerHTML : "" } }) };
+      });
+      var host = document.createElement("div");
+      host.className = "lg-host";
+      host.setAttribute("data-theme", "dark"); // l'app est sombre uniquement, même si l'iPhone est en clair
+      $tabs.appendChild(host);
+      glassTabs = lg.mountTabBar(host, { items: items, value: currentNavTab(),
+        onValueChange: function(v){ state.currentTab = v; render(); } });
+      $tabs.classList.add("lg-on");
+      syncBarHeights();
+    }).catch(function(err){ if(window.console) console.warn("Barre Liquid Glass indisponible :", err); });
+  }
+
   // Slides the little glass pill (#tab-highlight) under whichever nav button is currently
   // active, sizing/positioning it from that button's own layout box so it always lines up
   // exactly — no matter how many tabs there are or how wide the screen is.
@@ -1388,6 +1430,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       b.classList.toggle("active", b.getAttribute("data-tab") === (state.currentTab==="session"?"home":state.currentTab));
     });
     moveTabHighlight();
+    if(glassTabs) glassTabs.update({ value: currentNavTab() });
     if(state.activeSession && state.currentTab!=="session"){
       $resumeBanner.classList.add("show");
       $resumeName.textContent = findWorkout(state.activeSession.workoutId).name;
@@ -4308,7 +4351,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     reader.readAsText(file);
   });
 
-  function boot(){ applyTheme(); render(); }
+  function boot(){ applyTheme(); render(); loadGlassTabs(); }
   if(window.claude && window.claude.hot){
     window.claude.hot.snapshot(function(){ return {}; });
     window.claude.hot.ready ? window.claude.hot.ready(boot) : boot();

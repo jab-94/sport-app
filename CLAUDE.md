@@ -121,6 +121,12 @@ tête de `<head>` — il est abondamment commenté sur le pourquoi de chaque bou
 - b29 → fix scroll bloqué après fermeture de la modale vidéo (voir bugs iOS ci-dessus).
 - b97 → icône style verre (dalle sombre pleine page, reflets irisés aux coins, haltère blanche).
   Fichiers renommés `*-v2.png` : iOS garde l'ancienne icône en cache si le nom ne change pas.
+- b98 → barre d'onglets du paquet npm `@onlymoein/liquidglass` (React embarqué dans `vendor/liquidglass.js`
+  + `.css`, construit dans le dépôt Budget : `tools/web-vendor/build-liquidglass.mjs`). Chargée par
+  `loadGlassTabs()` au démarrage ; nav#tabs garde sa place et ses mesures (--navbar-h) mais perd son fond
+  (classe `lg-on`) ; ses boutons d'origine restent en repli si le chargement échoue. Barre forcée en sombre
+  (`data-theme="dark"`), icône active en `--accent`. Les styles `nav#tabs > button` sont limités aux
+  enfants directs pour ne pas déformer les boutons du paquet.
 
 ## Style de travail avec cet utilisateur
 
