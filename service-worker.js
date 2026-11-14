@@ -1,7 +1,7 @@
 // Bump this any time you replace the app's files so phones pick up the update
 // instead of serving a stale cached copy forever.
 const CACHE_VERSION = "sport-v97";
-const APP_SHELL = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png",
+const APP_SHELL = ["./", "./index.html", "./manifest.json", "./icon-192-v2.png", "./icon-512-v2.png", "./apple-touch-icon-v2.png",
   "./videos/abdo-kneetuck.mp4", "./videos/abdo-scissors.mp4", "./videos/abdo-vup.mp4", "./videos/abdo-twist.mp4",
   "./videos/abdo-bicycle.mp4", "./videos/abdo-jackknife.mp4", "./videos/abdo-pikewalk.mp4", "./videos/abdo-walkout.mp4",
   "./videos/haut-tricepspoulie.mp4", "./videos/bas-legcurl.mp4", "./videos/bas-abduction.mp4", "./videos/bas-presse.mp4"];

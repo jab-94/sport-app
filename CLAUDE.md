@@ -118,6 +118,7 @@ tête de `<head>` — il est abondamment commenté sur le pourquoi de chaque bou
   l'utilisateur.
 - b29 → fix scroll bloqué après fermeture de la modale vidéo (voir bugs iOS ci-dessus).
 - b97 → icône style verre (dalle sombre pleine page, reflets irisés aux coins, haltère blanche).
+  Fichiers renommés `*-v2.png` : iOS garde l'ancienne icône en cache si le nom ne change pas.
 
 ## Style de travail avec cet utilisateur
 
