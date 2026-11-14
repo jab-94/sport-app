@@ -129,6 +129,10 @@ tête de `<head>` — il est abondamment commenté sur le pourquoi de chaque bou
   enfants directs pour ne pas déformer les boutons du paquet.
 - b99 → curseur « Transparence de la barre » dans Réglages : `--lg-transparency` posé sur `.lg-host`
   (0 teintée, 0,5 normale, 1 transparente), gardé en localStorage `glass-transparency` (par téléphone, pas synchronisé).
+- b100 → fond animé « Mesh drift » (shader WebGL1 du 21st.dev Shader Builder, sans bibliothèque) : canvas
+  `#bg-shader` fixe sous `#app` (z-index 0/1), hauteur `--vvh`, DPR plafonné à 2, boucle arrêtée quand l'app
+  passe en arrière-plan, image fixe si « réduire les animations ». Couleurs #10002B/#7F00FF/#33AEB9/#0920F4.
+  Sans WebGL, le dégradé d'origine du body reste affiché.
 
 ## Style de travail avec cet utilisateur
 
