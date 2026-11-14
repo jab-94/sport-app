@@ -10,7 +10,9 @@ dans un seul fichier), plus `service-worker.js` pour le mode hors-ligne/PWA.
 ## Fichiers du repo
 
 - `index.html` — toute l'app (markup, styles, logique). Les données utilisateur
-  (séances, historique, réglages) vivent dans `localStorage`, pas de backend.
+  (séances, historique, réglages) sont en `localStorage` ET synchronisées en ligne dans Firestore
+  (un document partagé entre les iPhone, auth anonyme ; voir le `<script type="module">` « Shared cloud
+  backup » en fin de `index.html`). Supprimer le raccourci de l'écran d'accueil ne fait rien perdre.
 - `service-worker.js` — cache-first avec refresh en fond pour les assets, network-first
   pour `index.html`. **`CACHE_VERSION`** doit être bumpé à chaque déploiement de fichiers,
   sinon les téléphones gardent une version périmée en cache.
