@@ -314,6 +314,8 @@ nav#tabs.lg-on{
 }
 nav#tabs.lg-on > button, nav#tabs.lg-on > #tab-highlight{display:none;}
 nav#tabs.lg-on > .lg-host{display:flex; justify-content:center; width:100%;}
+.glass-range{width:100%; accent-color:var(--accent); margin:4px 0;}
+.glass-reset{background:none; border:0; color:var(--accent); font-size:14px; padding:4px 0;}
 nav#tabs .lg-tab-bar[data-icons]{--lg-tab-width:min(86px, calc((100vw - 50px) / 5)); --lg-tab-accent:var(--accent);}
 nav#tabs > button{
   position:relative; z-index:1;
@@ -625,7 +627,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b98";
+  var BUILD_VERSION = "b99";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -1357,6 +1359,20 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Mêmes onglets et mêmes icônes que les boutons de nav#tabs, qui restent dans le HTML comme
   // solution de repli si le chargement échoue.
   var glassTabs = null;
+  // b99 : transparence de la barre en verre (0 teintée, 50 normale, 100 transparente), réglée dans
+  // Réglages et gardée sur ce téléphone (localStorage, pas dans les données synchronisées). Posée sur
+  // .lg-host lui-même : son data-theme="dark" redéfinirait sinon la valeur héritée.
+  function glassPercent(){
+    var v = null;
+    try { v = localStorage.getItem("glass-transparency"); } catch(e){}
+    return v !== null && !isNaN(Number(v)) ? Math.round(Number(v) * 100) : 50;
+  }
+  function glassLabel(v){ return v <= 20 ? "teintée" : v >= 80 ? "transparente" : v === 50 ? "normale" : v + " %"; }
+  function setGlassPercent(v, save){
+    var host = $tabs.querySelector(".lg-host");
+    if(host) host.style.setProperty("--lg-transparency", String(v / 100));
+    if(save){ try { localStorage.setItem("glass-transparency", String(v / 100)); } catch(e){} }
+  }
   function currentNavTab(){ return state.currentTab === "session" ? "home" : state.currentTab; }
   function loadGlassTabs(){
     var link = document.createElement("link");
@@ -1377,6 +1393,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       host.className = "lg-host";
       host.setAttribute("data-theme", "dark"); // l'app est sombre uniquement, même si l'iPhone est en clair
       $tabs.appendChild(host);
+      setGlassPercent(glassPercent(), false);
       glassTabs = lg.mountTabBar(host, { items: items, value: currentNavTab(),
         onValueChange: function(v){ state.currentTab = v; render(); } });
       $tabs.classList.add("lg-on");
@@ -4041,6 +4058,16 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
       '<div class="faint">' + escapeAttr((ACCENT_THEMES[state.theme||"orange"]).label) + ' — change ta couleur quand l’humeur te prend.</div>' +
     '</div>';
 
+    var gv = glassPercent();
+    html += '<div class="card stack">' +
+      '<div class="row between"><div class="section-title" style="margin:0;">Transparence de la barre</div>' +
+        '<button type="button" class="glass-reset" id="glass-reset">Par défaut</button></div>' +
+      '<div class="faint">Barre d’onglets en verre : <strong id="glass-value">' + glassLabel(gv) + '</strong></div>' +
+      '<input type="range" id="glass-range" class="glass-range" min="0" max="100" step="5" value="' + gv + '">' +
+      '<div class="row between faint" style="font-size:12px;"><span>Teintée</span><span>Normale</span><span>Transparente</span></div>' +
+      '<div class="faint" style="font-size:12px;">Réglage gardé sur ce téléphone seulement.</div>' +
+    '</div>';
+
     html += '<div class="card row between" style="gap:12px;">' +
       '<div><div class="section-title" style="margin:0;">Minuteur de repos</div>' +
       '<div class="faint" style="margin-top:2px;">Durée par défaut entre les séries.</div></div>' +
@@ -4155,6 +4182,16 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     html += '</div>';
     $view.innerHTML = html;
     refreshRemoteStatusUI();
+    var $gr = document.getElementById("glass-range");
+    $gr.addEventListener("input", function(){
+      setGlassPercent(Number($gr.value), true);
+      document.getElementById("glass-value").textContent = glassLabel(Number($gr.value));
+    });
+    document.getElementById("glass-reset").addEventListener("click", function(){
+      setGlassPercent(50, false);
+      try { localStorage.removeItem("glass-transparency"); } catch(e){}
+      $gr.value = 50; document.getElementById("glass-value").textContent = glassLabel(50);
+    });
     document.getElementById("device-name-input").addEventListener("change", function(){ setDeviceName(this.value.trim()); });
 
     $view.querySelectorAll("[data-edit-muscles]").forEach(function(btn){

@@ -127,6 +127,8 @@ tête de `<head>` — il est abondamment commenté sur le pourquoi de chaque bou
   (classe `lg-on`) ; ses boutons d'origine restent en repli si le chargement échoue. Barre forcée en sombre
   (`data-theme="dark"`), icône active en `--accent`. Les styles `nav#tabs > button` sont limités aux
   enfants directs pour ne pas déformer les boutons du paquet.
+- b99 → curseur « Transparence de la barre » dans Réglages : `--lg-transparency` posé sur `.lg-host`
+  (0 teintée, 0,5 normale, 1 transparente), gardé en localStorage `glass-transparency` (par téléphone, pas synchronisé).
 
 ## Style de travail avec cet utilisateur
 
