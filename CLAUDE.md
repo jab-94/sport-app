@@ -133,6 +133,10 @@ tête de `<head>` — il est abondamment commenté sur le pourquoi de chaque bou
   `#bg-shader` fixe sous `#app` (z-index 0/1), hauteur `--vvh`, DPR plafonné à 2, boucle arrêtée quand l'app
   passe en arrière-plan, image fixe si « réduire les animations ». Couleurs #10002B/#7F00FF/#33AEB9/#0920F4.
   Sans WebGL, le dégradé d'origine du body reste affiché.
+- b101 → Réglages › « Fond d'écran » : choix du fond (registre `BG_STYLES` dans le script du fond : « Mesh drift »,
+  « Dégradé fixe » = fond CSS d'origine) + curseur de vitesse (0 arrêté, 50 = vitesse d'origine 0.73, 100 = ×2 ;
+  temps accumulé, pas de saut). Gardés en localStorage `bg-style` / `bg-speed`. API : `window.__sportBg`.
+  Ajouter un fond = une entrée dans BG_STYLES (+ balise shader si le fragment shader diffère).
 
 ## Style de travail avec cet utilisateur
 
