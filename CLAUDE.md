@@ -137,6 +137,9 @@ tête de `<head>` — il est abondamment commenté sur le pourquoi de chaque bou
   « Dégradé fixe » = fond CSS d'origine) + curseur de vitesse (0 arrêté, 50 = vitesse d'origine 0.73, 100 = ×2 ;
   temps accumulé, pas de saut). Gardés en localStorage `bg-style` / `bg-speed`. API : `window.__sportBg`.
   Ajouter un fond = une entrée dans BG_STYLES (+ balise shader si le fragment shader diffère).
+- b102 → tuiles de séance de l'accueil (`.workout-tile`) en dalles de verre transparentes façon iOS 27 : CSS pur
+  reprenant les valeurs du verre sombre du paquet liquidglass (pas de teinte, blur 15px contrast .66 brightness .83
+  saturate 1.7, liseré 0,5 px) + liseré lumineux en dégradé (::before masqué), icône teintée transparente.
 
 ## Style de travail avec cet utilisateur
 

@@ -368,6 +368,30 @@ nav#tabs > button.active svg{stroke:var(--accent);}
   border-radius:22px; padding:22px 14px 18px; box-shadow:var(--shadow), inset 0 1px 0 var(--glass-hi);
   display:flex; flex-direction:column; align-items:center; text-align:center; gap:5px;
 }
+/* b102 : tuiles de séance en dalles de verre transparentes façon iOS 27 — mêmes valeurs que le verre
+   « Liquid Glass » sombre du paquet de la barre d'onglets (vendor/liquidglass.css : pas de teinte à
+   transparence normale, flou 15 px, contraste .66, luminosité .83, saturation 1.7, liseré 0,5 px), refaites
+   en CSS pour rester légères à 6 tuiles. Le fond animé passe au travers. */
+.workout-tile{
+  position:relative; isolation:isolate;
+  background:rgba(255,255,255,.015); border:0;
+  backdrop-filter:blur(15px) contrast(.66) brightness(.83) saturate(1.7);
+  -webkit-backdrop-filter:blur(15px) contrast(.66) brightness(.83) saturate(1.7);
+  box-shadow:
+    inset 0 0 0 .5px rgba(255,255,255,.16),
+    inset 0 1px 0 rgba(255,255,255,.22),
+    inset 0 -1px 0 rgba(255,255,255,.05),
+    0 8px 21px rgba(0,0,0,.18);
+}
+/* Liseré lumineux plus vif en haut à gauche et en bas à droite, comme la lumière sur le verre d'iOS 27. */
+.workout-tile::before{
+  content:""; position:absolute; inset:0; border-radius:inherit; padding:1px; pointer-events:none; z-index:-1;
+  background:linear-gradient(135deg, rgba(255,255,255,.55), rgba(255,255,255,.10) 32%, rgba(255,255,255,.03) 60%, rgba(255,255,255,.30));
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor; mask-composite:exclude;
+}
+.workout-tile .wicon{ background:color-mix(in srgb, var(--tile-c, var(--accent)) 22%, transparent);
+  box-shadow:inset 0 0 0 .5px color-mix(in srgb, var(--tile-c, var(--accent)) 45%, transparent); }
 .workout-tile.span2{grid-column:1 / -1; flex-direction:row; text-align:left; align-items:center; justify-content:space-between; padding:16px 18px;}
 .workout-tile.span2 .wicon{margin-bottom:0;}
 .workout-tile.span2 .tinfo{text-align:left; align-items:flex-start;}
@@ -640,7 +664,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b101";
+  var BUILD_VERSION = "b102";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
