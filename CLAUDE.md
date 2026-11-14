@@ -117,6 +117,7 @@ tête de `<head>` — il est abondamment commenté sur le pourquoi de chaque bou
   abduction, presse à cuisses), extraites de 3 vidéos Instagram fournies par
   l'utilisateur.
 - b29 → fix scroll bloqué après fermeture de la modale vidéo (voir bugs iOS ci-dessus).
+- b97 → icône style verre (dalle sombre pleine page, reflets irisés aux coins, haltère blanche).
 
 ## Style de travail avec cet utilisateur
 
