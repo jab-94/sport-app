@@ -140,6 +140,8 @@ tête de `<head>` — il est abondamment commenté sur le pourquoi de chaque bou
 - b102 → tuiles de séance de l'accueil (`.workout-tile`) en dalles de verre transparentes façon iOS 27 : CSS pur
   reprenant les valeurs du verre sombre du paquet liquidglass (pas de teinte, blur 15px contrast .66 brightness .83
   saturate 1.7, liseré 0,5 px) + liseré lumineux en dégradé (::before masqué), icône teintée transparente.
+- b103 → dalles reliées au curseur (renommé « Transparence du verre ») : `setGlassPercent` pose aussi `--glass-t`
+  sur <html> (appliqué dès boot()) ; formule du paquet (teinte sombre sous 0,5, flou/ton qui s'effacent au-dessus).
 
 ## Style de travail avec cet utilisateur
 

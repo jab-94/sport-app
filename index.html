@@ -372,11 +372,17 @@ nav#tabs > button.active svg{stroke:var(--accent);}
    « Liquid Glass » sombre du paquet de la barre d'onglets (vendor/liquidglass.css : pas de teinte à
    transparence normale, flou 15 px, contraste .66, luminosité .83, saturation 1.7, liseré 0,5 px), refaites
    en CSS pour rester légères à 6 tuiles. Le fond animé passe au travers. */
+/* b103 : reliées au curseur « Transparence du verre » (--glass-t, 0 teintée → 0,5 normale → 1 transparente),
+   avec la même formule que le paquet : sous 0,5 une teinte sombre apparaît, au-dessus le flou et le
+   ton s'effacent vers un verre clair. */
 .workout-tile{
+  --gt:var(--glass-t, .5);
+  --gc:clamp(0, (var(--gt) - .5) * 2, 1);   /* « clarté » : 0 à 0,5 et en dessous, 1 tout à droite */
+  --gtint:clamp(0, (.5 - var(--gt)) * 2, 1); /* teinte : 1 tout à gauche, 0 à partir de 0,5 */
   position:relative; isolation:isolate;
-  background:rgba(255,255,255,.015); border:0;
-  backdrop-filter:blur(15px) contrast(.66) brightness(.83) saturate(1.7);
-  -webkit-backdrop-filter:blur(15px) contrast(.66) brightness(.83) saturate(1.7);
+  background:color-mix(in srgb, rgb(30 30 32 / .95) calc(var(--gtint) * 100%), rgba(255,255,255,.015)); border:0;
+  backdrop-filter:blur(calc(15px - 14px * var(--gc))) contrast(calc(.66 + .133 * var(--gc))) brightness(calc(.83 + .375 * var(--gc))) saturate(calc(1.7 - .583 * var(--gc)));
+  -webkit-backdrop-filter:blur(calc(15px - 14px * var(--gc))) contrast(calc(.66 + .133 * var(--gc))) brightness(calc(.83 + .375 * var(--gc))) saturate(calc(1.7 - .583 * var(--gc)));
   box-shadow:
     inset 0 0 0 .5px rgba(255,255,255,.16),
     inset 0 1px 0 rgba(255,255,255,.22),
@@ -664,7 +670,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   // Small on-screen build tag (next to the "Sport" title) so a screenshot always shows,
   // beyond doubt, which deployed version is actually rendering — bump this string every
   // time index.html is redeployed, independently of CACHE_VERSION/CONTENT_VERSION above.
-  var BUILD_VERSION = "b102";
+  var BUILD_VERSION = "b103";
   (function(){ var el = document.getElementById("build-badge"); if(el) el.textContent = BUILD_VERSION; })();
 
   // Tap the build badge to show real on-device measurements instead of guessing from
@@ -1407,6 +1413,8 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
   function bgSpeedLabel(v){ return v === 0 ? "arrêtée" : v === 50 ? "normale" : v < 50 ? "plus lente" : "plus rapide"; }
   function glassLabel(v){ return v <= 20 ? "teintée" : v >= 80 ? "transparente" : v === 50 ? "normale" : v + " %"; }
   function setGlassPercent(v, save){
+    // b103 : le même réglage pilote aussi les dalles de verre des séances (--glass-t sur <html>).
+    document.documentElement.style.setProperty("--glass-t", String(v / 100));
     var host = $tabs.querySelector(".lg-host");
     if(host) host.style.setProperty("--lg-transparency", String(v / 100));
     if(save){ try { localStorage.setItem("glass-transparency", String(v / 100)); } catch(e){} }
@@ -4115,9 +4123,9 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
 
     var gv = glassPercent();
     html += '<div class="card stack">' +
-      '<div class="row between"><div class="section-title" style="margin:0;">Transparence de la barre</div>' +
+      '<div class="row between"><div class="section-title" style="margin:0;">Transparence du verre</div>' +
         '<button type="button" class="glass-reset" id="glass-reset">Par défaut</button></div>' +
-      '<div class="faint">Barre d’onglets en verre : <strong id="glass-value">' + glassLabel(gv) + '</strong></div>' +
+      '<div class="faint">Barre d’onglets et séances : <strong id="glass-value">' + glassLabel(gv) + '</strong></div>' +
       '<input type="range" id="glass-range" class="glass-range" min="0" max="100" step="5" value="' + gv + '">' +
       '<div class="row between faint" style="font-size:12px;"><span>Teintée</span><span>Normale</span><span>Transparente</span></div>' +
       '<div class="faint" style="font-size:12px;">Réglage gardé sur ce téléphone seulement.</div>' +
@@ -4462,7 +4470,7 @@ svg text{font-family:"IBM Plex Mono",monospace; font-size:9.5px; fill:var(--ink-
     reader.readAsText(file);
   });
 
-  function boot(){ applyTheme(); render(); loadGlassTabs(); }
+  function boot(){ setGlassPercent(glassPercent(), false); applyTheme(); render(); loadGlassTabs(); }
   if(window.claude && window.claude.hot){
     window.claude.hot.snapshot(function(){ return {}; });
     window.claude.hot.ready ? window.claude.hot.ready(boot) : boot();
