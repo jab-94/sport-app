@@ -142,6 +142,8 @@ tête de `<head>` — il est abondamment commenté sur le pourquoi de chaque bou
   saturate 1.7, liseré 0,5 px) + liseré lumineux en dégradé (::before masqué), icône teintée transparente.
 - b103 → dalles reliées au curseur (renommé « Transparence du verre ») : `setGlassPercent` pose aussi `--glass-t`
   sur <html> (appliqué dès boot()) ; formule du paquet (teinte sombre sous 0,5, flou/ton qui s'effacent au-dessus).
+- b104 → fond « Silk » ajouté au sélecteur (shader `#silk-frag` : même base que Mesh drift, seule `shade()` change ;
+  couleurs #02010A/#04052E/#3D2C8D/#916BBF, temps ×0.76, réglages exacts du 21st.dev Shader Builder).
 
 ## Style de travail avec cet utilisateur
 
